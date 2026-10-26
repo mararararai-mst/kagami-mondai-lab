@@ -352,7 +352,7 @@ function buildHome(){
       else if(P.id==='moji'){ th.innerHTML=mojiThumb(); }
       const tl=document.createElement('b'); tl.innerHTML=P.title+(P.is3d?'<span class="tag3d">3D</span>':''); b.appendChild(tl);
       const sm=document.createElement('small'); sm.textContent=(P.soon?'つくっている途中　':'')+'プリント：'+P.src; b.appendChild(sm);
-      if(!P.soon) b.onclick=()=>{ if(P.href) location.href=P.href; else openLab(P.id); };
+      if(!P.soon) b.onclick=()=>{ if(P.href){ if(window.__open3d) window.__open3d(P.href); else location.href=P.href; } else openLab(P.id); };   // 1ファイル版では3Dを中に開く
       grid.appendChild(b);
     }
   }
