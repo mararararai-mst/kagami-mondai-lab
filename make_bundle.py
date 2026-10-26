@@ -1,5 +1,5 @@
 """仮置き場用の1ファイル版をつくる：three.js と 3D の2ページを、問題をえらぶページの中に入れる。
-python make_bundle.py → 鏡の問題ラボ_中1理科_光による現象.html
+python make_bundle.py → 鏡のセカイ_中1理科_光による現象.html
 
 3D のページは、カードを押したときに iframe（srcdoc）で開く。
 three.js は親で動かさず、本文を文字として持っておき、開くときに 3D のページの中へ入れる
@@ -33,6 +33,6 @@ window.__close3d=function(){ const f=document.getElementById('__fr3d'); if(f) f.
 """ % (json.dumps(b64(rd('three.min.js'))), json.dumps(tpl))
 
 s = rd('index.html').replace('</body>', inject + '</body>')
-out = os.path.join(H, '鏡の問題ラボ_中1理科_光による現象.html')
+out = os.path.join(H, '鏡のセカイ_中1理科_光による現象.html')
 open(out, 'w', encoding='utf-8').write(s)
 print('saved', os.path.basename(out), round(len(s.encode('utf-8')) / 1024), 'KB')
