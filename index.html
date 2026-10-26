@@ -44,6 +44,7 @@
   .pcard .th svg{width:100%; height:100%; display:block;}
   .pcard b{display:block; font-size:14.7px; font-weight:900; margin:8px 2px 2px;}
   .pcard small{display:block; font-size:11.5px; color:var(--ink-soft); font-weight:700; margin:0 2px;}
+  .pcard .pg{display:inline-block; background:#efe7da; color:var(--ink); font-size:11.5px; font-weight:900; border-radius:8px; padding:1px 7px; margin-right:6px; vertical-align:2px;}
   .pcard .tag3d{display:inline-block; background:#3a3040; color:#fff; font-size:11.5px; font-weight:900; border-radius:8px; padding:1px 7px; margin-left:6px; vertical-align:2px;}
   .pcard.soon{cursor:default; opacity:.55;}
   .pcard.soon:active{transform:none;}
@@ -339,27 +340,56 @@ function initState(P){
   if(P.kind==='ray') return { src:[...P.source.at], dir:[...P.source.dir], ang:false };
   if(P.kind==='side') return sideState('kagawa');
   return { eye:[...P.eye.at], objs:P.objs.map(o=>[...o.at]), tapped:new Set(P.startTap||[]), zone:true, img:false, ang:false }; }
+/* 一覧はプリントの問題の順（2026-10-27 本人「プリントの問題の順に並べ直して」）。
+   1つの画面で何問も扱うもの（全身鏡・文字の向き）は、問題ごとにカードを分けて、その問題の設定で開く */
+const HOME=[
+  { print:'鏡のしくみ、反射の法則2', items:[
+    { p:'p.1', title:'Bの像と、光の道すじ', id:'zou' },
+    { p:'p.1', title:'鏡と棒　見えない棒はどれ？', id:'bou' },
+    { p:'p.2', title:'2枚の鏡で点Pの上へ（長崎）', id:'nagasaki' },
+    { p:'p.2', title:'鏡①②とスクリーン', id:'screen' },
+    { p:'p.3', title:'まち針と2枚の鏡（福井）', href:'kagami3d.html?p=fukui', d3:true, thumb:'fukui' },
+    { p:'p.4', title:'直角の鏡と光の道すじ（19図）', id:'chokkaku' },
+    { p:'p.4', title:'「L」の向き（20図）', href:'moji3d.html', d3:true, thumb:'L' },
+    { p:'p.5', title:'色鉛筆　どの色が見える？', id:'iro' } ]},
+  { print:'鏡発展　演習2', items:[
+    { p:'p.1', title:'全身鏡の大きさ（香川）', id:'zenshin', preset:'kagawa' },
+    { p:'p.2', title:'鏡Aにうつる自分（大分 問1・2）', id:'zenshin', preset:'oita' },
+    { p:'p.2', title:'背中の「4」（大分 問3）', href:'moji3d.html?s=four', d3:true, thumb:'4' },
+    { p:'p.3', title:'鏡に見える全身の高さ（静岡）', id:'zenshin', preset:'shizuoka' },
+    { p:'p.3', title:'鏡にうつる自分の姿（島根）', id:'zenshin', preset:'shimane' },
+    { p:'p.4', title:'手鏡で後頭部を見る', id:'temagami' },
+    { p:'p.5', title:'必要な鏡の大きさ（確認テスト）', id:'zenshin', preset:'kakunin' } ]},
+];
 function buildHome(){
   const box=document.getElementById('homeList');
-  for(const t of ['A','B','C','D']){
-    const h=document.createElement('h2'); h.textContent=TYPE_NAME[t]; box.appendChild(h);
+  for(const sec of HOME){
+    const h=document.createElement('h2'); h.textContent='プリント「'+sec.print+'」'; box.appendChild(h);
     const grid=document.createElement('div'); grid.className='grid'; box.appendChild(grid);
-    for(const P of PROBLEMS.filter(p=>p.type===t)){
-      const b=document.createElement('button'); b.className='pcard'+(P.soon?' soon':'');
+    sec.items.forEach((it,k)=>{
+      const b=document.createElement('button'); b.className='pcard';
       const th=document.createElement('span'); th.className='th'; b.appendChild(th);
-      if(P.kind){ const s=document.createElementNS(NS,'svg'); s.setAttribute('preserveAspectRatio','xMidYMid meet'); th.appendChild(s); KIND[P.kind].draw(s,P,initState(P),{uid:'th-'+P.id,interactive:false}); }
-      else if(P.cols){ const s=document.createElementNS(NS,'svg'); s.setAttribute('preserveAspectRatio','xMidYMid meet'); th.appendChild(s); drawBoard(s,P,{...initState(P),zone:false,tapped:new Set()},{uid:'th-'+P.id,interactive:false}); }
-      else if(P.id==='fukui'){ th.innerHTML=fukuiThumb(); }
-      else if(P.id==='moji'){ th.innerHTML=mojiThumb(); }
-      const tl=document.createElement('b'); tl.innerHTML=P.title+(P.is3d?'<span class="tag3d">3D</span>':''); b.appendChild(tl);
-      const sm=document.createElement('small'); sm.textContent=(P.soon?'つくっている途中　':'')+'プリント：'+P.src; b.appendChild(sm);
-      if(!P.soon) b.onclick=()=>{ if(P.href){ if(window.__open3d) window.__open3d(P.href); else location.href=P.href; } else openLab(P.id); };   // 1ファイル版では3Dを中に開く
+      const P=it.id ? PROBLEMS.find(q=>q.id===it.id) : null;
+      if(P && P.kind){ const s=document.createElementNS(NS,'svg'); s.setAttribute('preserveAspectRatio','xMidYMid meet'); th.appendChild(s);
+        const st=it.preset ? sideState(it.preset) : initState(P); KIND[P.kind].draw(s,P,st,{uid:'th-'+it.id+(it.preset||'')+k,interactive:false}); }
+      else if(P){ const s=document.createElementNS(NS,'svg'); s.setAttribute('preserveAspectRatio','xMidYMid meet'); th.appendChild(s); drawBoard(s,P,{...initState(P),zone:false,tapped:new Set()},{uid:'th-'+P.id,interactive:false}); }
+      else if(it.thumb==='fukui') th.innerHTML=fukuiThumb();
+      else th.innerHTML=mojiThumb(it.thumb);
+      const tl=document.createElement('b'); tl.innerHTML=`<span class="pg">${it.p}</span>`+it.title+(it.d3?'<span class="tag3d">3D</span>':''); b.appendChild(tl);
+      b.onclick=()=>{ if(it.href){ if(window.__open3d) window.__open3d(it.href); else location.href=it.href; }   // 1ファイル版では3Dを中に開く
+                      else openLab(it.id,{preset:it.preset,title:it.title,src:sec.print+' '+it.p}); };
       grid.appendChild(b);
-    }
+    });
   }
 }
 // 文字の向きのカード用の小さな図（直角の2枚の鏡と、Lのプレート）
-function mojiThumb(){
+function mojiThumb(kind){
+  if(kind==='4') return `<svg viewBox="0 0 160 100" xmlns="${NS}">
+    <rect x="18" y="14" width="8" height="70" fill="#8f99a3"/><line x1="26" y1="14" x2="26" y2="84" stroke="#b8c0c8" stroke-width="2.4"/>
+    <circle cx="80" cy="30" r="10" fill="#f1c9a5"/><rect x="66" y="42" width="28" height="36" rx="5" fill="#5b8fd6"/>
+    <text x="80" y="68" font-size="18" font-weight="900" fill="#fff" text-anchor="middle">4</text>
+    <rect x="112" y="22" width="16" height="22" rx="2" fill="#b8c0c8" stroke="#8f99a3" stroke-width="2"/><line x1="120" y1="44" x2="120" y2="58" stroke="#d8a23a" stroke-width="3"/>
+    <text x="12" y="96" font-size="9" font-weight="900" fill="#6e6053">鏡A</text><text x="108" y="16" font-size="9" font-weight="900" fill="#6e6053">鏡B</text></svg>`;
   return `<svg viewBox="0 0 160 100" xmlns="${NS}">
     <path d="M80,12 L40,52 L36.5,48.5 L80,5 Z" fill="#8f99a3"/><path d="M80,12 L120,52 L123.5,48.5 L80,5 Z" fill="#8f99a3"/>
     <line x1="80" y1="12" x2="40" y2="52" stroke="#b8c0c8" stroke-width="2.4"/><line x1="80" y1="12" x2="120" y2="52" stroke="#b8c0c8" stroke-width="2.4"/>
@@ -385,12 +415,14 @@ function fukuiThumb(){
    ========================================================= */
 let CUR=null, ST=null;
 const fig=document.getElementById('fig');
-function openLab(id){
+function openLab(id,opt={}){
   CUR=PROBLEMS.find(p=>p.id===id); ST=initState(CUR);
+  if(opt.preset) ST=sideState(opt.preset);
+  if(!opt.title){ const it=HOME.flatMap(sec=>sec.items.map(x=>({...x,src:sec.print+' '+x.p}))).find(x=>x.id===id&&(!opt.preset||x.preset===opt.preset)); if(it){ opt.title=it.title; opt.src=it.src; } }
   document.getElementById('home').style.display='none';
   document.getElementById('lab').style.display='block';
-  document.getElementById('labTitle').textContent=CUR.title;
-  document.getElementById('labSrc').textContent='プリント：'+CUR.src;
+  document.getElementById('labTitle').textContent=opt.title||CUR.title;
+  document.getElementById('labSrc').textContent='プリント：'+(opt.src||CUR.src);
   const k=CUR.kind;
   document.getElementById('cardShow').style.display = k==='side' ? 'none' : '';
   document.getElementById('tZone').style.display = k ? 'none' : '';
@@ -399,7 +431,7 @@ function openLab(id){
   document.getElementById('hintline').innerHTML = k ? CUR.hint : '目も物も、つかんで動かせます。<br>物をタップすると、光の道すじが出ます。';
   if(k==='side') buildSideControls();
   syncTog(); render();
-  history.replaceState(null,'','#'+id);
+  history.replaceState(null,'','#'+id+(opt.preset?':'+opt.preset:''));
   scrollTo(0,0);
 }
 function goHome(){ document.getElementById('lab').style.display='none'; document.getElementById('home').style.display='block'; history.replaceState(null,'',location.pathname); }
@@ -715,14 +747,14 @@ function buildSideControls(){
   syncSliders();
 }
 function syncSliders(){ for(const id of ['H','eye','dist','top','bot']){ const i=document.getElementById('s_'+id); if(!i) continue; i.value=ST[id]; document.getElementById('v_'+id).textContent=ST[id]+' cm'; } }
+// 人の絵（ChatGPT で作った横向きの絵。img/person_side.png は左向き・頭のてっぺん〜くつ先で切りぬき）
+const PERSON_SIDE={ src:'img/person_side.png', aspect:150/760, eyeX:.25 };   // eyeX＝絵の前はしから目までの幅の割合
+const personW=H=>H*PERSON_SIDE.aspect;
 function drawPerson(g,x,H,eye,face,opacity){
-  const r=H*0.075, gg=el('g',{opacity},g), Y=h=>-h;
-  el('rect',{x:x-5.5,y:Y(H*0.46),width:11,height:H*0.46,fill:'#3a3a52'},gg);                  // 足
-  el('rect',{x:x-12,y:Y(H*0.62),width:24,height:H*0.18,rx:3,fill:'#c0503a'},gg);              // スカート
-  el('rect',{x:x-11,y:Y(H*0.83),width:22,height:H*0.23,rx:5,fill:'#efe3c4'},gg);              // 上着
-  el('circle',{cx:x,cy:Y(H-r),r,fill:'#f1c9a5'},gg);                                          // 顔
-  el('path',{d:`M${x-face*r*0.1},${Y(H)} A${r},${r} 0 0 ${face>0?0:1} ${x-face*r*0.1},${Y(H-2*r)} Z`,fill:'#3a2a22'},gg);  // 髪（うしろがわ）
-  el('circle',{cx:x+face*r*0.55,cy:Y(eye),r:1.3,fill:'#2a2030'},gg);                          // 目
+  const w=personW(H), Y=h=>-h;
+  const im=el('image',{href:PERSON_SIDE.src,x:x-w/2,y:Y(H),width:w,height:H,opacity,preserveAspectRatio:'none'},g);
+  if(face>0) im.setAttribute('transform',`translate(${2*x},0) scale(-1,1)`);   // 右向き（鏡の向こうの像）は左右反転
+  if(opacity>=1) el('circle',{cx:x+face*w*PERSON_SIDE.eyeX,cy:Y(eye),r:2.2,fill:'none',stroke:'var(--ray)','stroke-width':1.2},g);   // 目の高さ（スライダーの値）
 }
 KIND.side={
   draw(svg,P,st,opt){
@@ -754,19 +786,19 @@ KIND.side={
     el('line',{x1:4,y1:Y(n1),x2:4,y2:Y(n2),stroke:'var(--ray)','stroke-width':3.2,opacity:.85},svg);
     el('text',{x:7,y:Y((n1+n2)/2),'font-size':6,'font-weight':900,fill:'var(--ray)'},svg).textContent=`全身に必要 ${Math.round(n2-n1)}cm`;
     // 頭のてっぺん・足先からの光
-    const g=el('g',{},svg), E=[dist,Y(eye)];
+    const g=el('g',{},svg), E=[dist-personW(H)*PERSON_SIDE.eyeX,Y(eye)];   // 光は絵の目に届く
     for(const [h,mh] of [[H,n2],[0,n1]]){
       const M=[0,Y(mh)], ok=mh>=bot-1e-9 && mh<=top+1e-9, O=[dist,Y(h)];
       const col=ok?'var(--ray)':'#b9afa2', dash=ok?null:'2 1.6';
       const at={stroke:col,'stroke-width':1.3}; if(dash) at['stroke-dasharray']=dash;
-      el('line',{x1:O[0],y1:O[1],x2:M[0],y2:M[1],...at,'marker-end':ok?`url(#arw-${opt.uid})`:''},g);
-      el('line',{x1:M[0],y1:M[1],x2:E[0]-3,y2:E[1]+(M[1]-E[1])*3/dist,...at,'marker-end':ok?`url(#arw-${opt.uid})`:''},g);
-      el('line',{x1:M[0],y1:M[1],x2:-dist,y2:O[1],stroke:col,'stroke-width':.8,'stroke-dasharray':'2 1.6',opacity:.8},g);
+      el('line',{x1:E[0],y1:O[1],x2:M[0],y2:M[1],...at,'marker-end':ok?`url(#arw-${opt.uid})`:''},g);   // 目と同じたての線の、頭のてっぺん・足もとから（反射の法則がずれないように）
+      el('line',{x1:M[0],y1:M[1],x2:E[0]-3,y2:E[1]+(M[1]-E[1])*3/E[0],...at,'marker-end':ok?`url(#arw-${opt.uid})`:''},g);
+      el('line',{x1:M[0],y1:M[1],x2:-E[0],y2:O[1],stroke:col,'stroke-width':.8,'stroke-dasharray':'2 1.6',opacity:.8},g);
     }
     // 問題の点（ア〜カ）
     const pre=SIDE_PRESET[st.preset];
     if(pre && pre.H===H && pre.eye===eye) for(const [id,h] of pre.pts){
-      const seen=h>=lo-1e-9 && h<=hi+1e-9, x=dist-13;
+      const seen=h>=lo-1e-9 && h<=hi+1e-9, x=dist-personW(H)/2-3.5;
       if(seen) el('circle',{cx:x,cy:Y(h),r:3.4,fill:'none',stroke:'var(--ray)','stroke-width':1.4},svg);
       el('circle',{cx:x,cy:Y(h),r:1.8,fill:'#3a3040'},svg);
       el('text',{x:x-4.5,y:Y(h)+2,'font-size':6,'font-weight':900,fill:'var(--ink)','text-anchor':'end'},svg).textContent=id;
@@ -798,7 +830,7 @@ KIND.side={
 };
 
 buildHome();
-function fromHash(){ const id=location.hash.slice(1); if(PROBLEMS.some(p=>p.id===id&&(p.cols||p.kind))) openLab(id); }
+function fromHash(){ const [id,preset]=decodeURIComponent(location.hash.slice(1)).split(':'); if(PROBLEMS.some(p=>p.id===id&&(p.cols||p.kind))) openLab(id, preset&&SIDE_PRESET[preset]?{preset}:{}); }
 fromHash(); addEventListener('hashchange',fromHash);
 window.__kagami={PROBLEMS,seenVia,reflect,side,get ST(){return ST;},openLab};
 </script>
