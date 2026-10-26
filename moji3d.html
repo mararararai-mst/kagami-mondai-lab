@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>鏡にうつる文字の向き 3D｜鏡の問題ラボ</title>
+<meta name="description" content="Lのプレートと背中の4。鏡1枚・直角の2枚の鏡・手鏡と壁の鏡で、文字がどう見えるかを目の位置から確かめる。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  /* 3Dの操作パネル＝福井3D・凸レンズ3Dラボと同じ（半透明の白＋ふんわり影） */
+  :root{ --ink:#5a4a3a; --sub:#6e6053; --acc:#b8540f; --cw:228px;
+    --font:'Zen Maru Gothic','UD デジタル 教科書体 NK-R','Yu Gothic UI','Meiryo',sans-serif; }
+  html,body{margin:0;height:100%;overflow:hidden;background:#0f1216;font-family:var(--font);color:var(--ink);font-weight:500;}
+  canvas#gl{position:fixed;inset:0;width:100vw;height:100vh;touch-action:none;display:block;}
+  .panel{position:fixed;background:rgba(255,255,255,.93);border-radius:18px;box-shadow:0 4px 14px rgba(0,0,0,.28);}
+  #topbar{top:12px;left:12px;padding:7px 10px;display:flex;align-items:center;gap:10px;max-width:calc(100vw - var(--cw) - 48px);box-sizing:border-box;}
+  #topbar h1{margin:0;font-size:16px;font-weight:900;white-space:nowrap;}
+  #topbar a{font-size:13px;font-weight:900;color:#fff;background:#7b4fc9;border-radius:12px;padding:7px 12px;text-decoration:none;white-space:nowrap;}
+  #topbar small{font-size:11.5px;color:var(--sub);font-weight:700;white-space:nowrap;}
+  #ctrl{top:12px;right:12px;width:var(--cw);padding:10px;display:flex;flex-direction:column;gap:8px;box-sizing:border-box;max-height:calc(100vh - 24px);overflow-y:auto;}
+  .sec{background:#f6efe5;border-radius:13px;padding:8px;}
+  .sec h3{margin:0 0 6px;font-size:12px;font-weight:900;color:var(--sub);}
+  .seg{display:flex;gap:5px;flex-wrap:wrap;}
+  .seg button{flex:1 1 auto;border:none;border-radius:10px;padding:8px 6px;background:#fff;color:var(--ink);
+    font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;line-height:1.25;transition:transform .08s;}
+  .seg button:active{transform:translateY(3px);}
+  .seg button.on{background:var(--acc);color:#fff;}
+  .col{flex-direction:column;}
+  #infobar{left:12px;right:calc(var(--cw) + 24px);bottom:12px;padding:10px 16px;font-size:15px;line-height:1.7;text-wrap:pretty;}
+  #infobar b{color:var(--acc);font-weight:900;}
+  .lbl{position:fixed;left:0;top:0;transform:translate(-50%,-50%);background:rgba(255,255,255,.92);color:var(--ink);font-size:12px;font-weight:900;
+    padding:1px 7px;border-radius:9px;pointer-events:none;white-space:nowrap;}
+  @media (max-width:760px){ :root{--cw:170px;} #topbar h1{display:none;} #topbar small{display:none;} #infobar{font-size:13.5px;} }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="panel" id="topbar">
+  <a href="index.html">◀ 問題をえらぶ</a>
+  <h1>鏡にうつる文字の向き</h1>
+  <small id="src">プリント：鏡のしくみ、反射の法則 p.4（20図）</small>
+</div>
+<div class="panel" id="ctrl">
+  <div class="sec">
+    <h3>問題</h3>
+    <div class="seg col" id="segScene">
+      <button data-s="L" class="on">Lのプレート（20図）</button>
+      <button data-s="four">背中の4（大分）</button>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>視点</h3>
+    <div class="seg col" id="segView"></div>
+  </div>
+</div>
+<div class="panel" id="infobar"></div>
+<div id="labels"></div>
+
+<script src="three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const V3=(x,y,z)=>new THREE.Vector3(x,y,z);
+
+/* ---------- 文字のテクスチャ ---------- */
+function letterTex(ch, opts={}){
+  const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d');
+  g.fillStyle=opts.bg||'#ffffff'; g.fillRect(0,0,256,256);
+  if(opts.frame){ g.strokeStyle='#2a2a2a'; g.lineWidth=14; g.strokeRect(12,12,232,232); }
+  g.fillStyle=opts.ink||'#2a2a2a'; g.font=`900 ${opts.size||190}px "Zen Maru Gothic", "Arial Black", sans-serif`;
+  g.textAlign='center'; g.textBaseline='middle'; g.fillText(ch,128,opts.dy?128+opts.dy:138);
+  const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding; t.anisotropy=8; return t;
+}
+
+/* =========================================================
+   場面（上から見て x：右、z：手前。y：上）
+   ========================================================= */
+const EYE_H=1.55;
+const SCENES={
+  L:{ src:'プリント：鏡のしくみ、反射の法則 p.4（20図）',
+      // 鏡Aと鏡Bを直角に合わせて立てる（合わせ目が z=0。図の上＝奥）
+      mirrors:[ { name:'鏡A', a:[0,0], b:[-3,3] }, { name:'鏡B', a:[0,0], b:[3,3] } ], mh:2.2,
+      P:[0,3.0],
+      views:[ ['X','Pの目：Xの向き（鏡Bを見る）'], ['Y','Pの目：Yの向き（合わせ目を見る）'], ['top','上から'] ],
+      dirs:{ X:[Math.SQRT1_2,-Math.SQRT1_2], Y:[0,-1] } },
+  four:{ src:'プリント：鏡発展 p.2（大分 問3）',
+      // 壁の鏡A（z=-1.6、手前むき）。花子さんは鏡Aに背を向けて立ち、手鏡Bを顔の左前に持つ
+      mirrors:[ { name:'鏡A', a:[1.2,-1.6], b:[-1.2,-1.6] } ], mh:1.8, my:.4,
+      P:[0,0],
+      views:[ ['eye','花子さんの目：手鏡Bを見る'], ['side','横から'], ['top','上から'] ],
+      dirs:{} },
+};
+
+/* ---------- three.js ---------- */
+const renderer=new THREE.WebGLRenderer({canvas:$('gl'),antialias:true,stencil:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight);
+renderer.outputEncoding=THREE.sRGBEncoding; renderer.autoClear=false; renderer.localClippingEnabled=true;
+renderer.setClearColor(0x0f1216);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.03,200);
+
+function lights(sc){ sc.add(new THREE.HemisphereLight(0xf0f2f6,0x3a3430,.9)); const d=new THREE.DirectionalLight(0xfff4e6,.55); d.position.set(2,6,4); sc.add(d); }
+
+const MAT={
+  floor:()=>new THREE.MeshStandardMaterial({color:0xd9d2c6,roughness:.95}),
+  wall: ()=>new THREE.MeshStandardMaterial({color:0xece6db,roughness:.95}),
+  skin: ()=>new THREE.MeshStandardMaterial({color:0xf1c9a5,roughness:.7}),
+  hair: ()=>new THREE.MeshStandardMaterial({color:0x3a2a22,roughness:.8}),
+  shirt:()=>new THREE.MeshStandardMaterial({color:0x5b8fd6,roughness:.75}),
+  leg:  ()=>new THREE.MeshStandardMaterial({color:0x3a3a52,roughness:.8}),
+  frame:()=>new THREE.MeshStandardMaterial({color:0x8f99a3,roughness:.5,metalness:.3}),
+  plateBack:()=>new THREE.MeshStandardMaterial({color:0xf3f0ea,roughness:.8}),
+  plateL:()=>new THREE.MeshStandardMaterial({map:letterTex('L',{frame:true,size:170}),roughness:.8}),
+  four: ()=>new THREE.MeshStandardMaterial({map:letterTex('4',{bg:'#5b8fd6',ink:'#ffffff',size:210}),roughness:.8}),
+  handle:()=>new THREE.MeshStandardMaterial({color:0xd8a23a,roughness:.5}),
+};
+
+/* 鏡の情報（面の中心・表向きの法線・幅・高さ・向き） */
+function mirrorGeom(S){
+  const out=S.mirrors.map(m=>{
+    const a=V3(m.a[0],0,m.a[1]), b=V3(m.b[0],0,m.b[1]), mid=a.clone().add(b).multiplyScalar(.5);
+    const along=b.clone().sub(a), w=along.length(); along.normalize();
+    let n=V3(-along.z,0,along.x);                                 // 横向きの法線
+    const P=V3(S.P[0],0,S.P[1]); if(n.dot(P.clone().sub(mid))<0) n.negate();   // 表＝人のいる側
+    const y0=S.my||0;
+    return { name:m.name, mid:V3(mid.x, y0+S.mh/2, mid.z), n, w, h:S.mh, along };
+  });
+  if(S===SCENES.four){                                            // 手鏡B：目から見て、背中の像（鏡Aの中）が見える向きに置く
+    const eye=V3(0,EYE_H,0), B=V3(-.42,1.48,.42);
+    const back=V3(0,1.22,-.2), A=out[0], backImg=back.clone().sub(A.n.clone().multiplyScalar(2*back.clone().sub(A.mid).dot(A.n)));
+    const u1=eye.clone().sub(B).normalize(), u2=backImg.clone().sub(B).normalize(), n=u1.add(u2).normalize();
+    out.push({ name:'手鏡B', mid:B, n, w:.26, h:.34, hand:true });
+  }
+  return out;
+}
+// 鏡の面での折り返し（4×4の行列）
+function reflMat(M){
+  const n=M.n, d=n.dot(M.mid), m=new THREE.Matrix4();
+  m.set(1-2*n.x*n.x, -2*n.x*n.y, -2*n.x*n.z, 2*d*n.x,
+        -2*n.y*n.x, 1-2*n.y*n.y, -2*n.y*n.z, 2*d*n.y,
+        -2*n.z*n.x, -2*n.z*n.y, 1-2*n.z*n.z, 2*d*n.z,
+        0,0,0,1);
+  return m;
+}
+function backPlane(n,p){ return new THREE.Plane(n.clone().negate(), n.dot(p)); }   // 鏡のうしろ側だけ残す
+
+/* 世界をつくる。mat(name) で材質を、face(i) で鏡 i の面の材質を決める */
+function buildWorld(S,MG,mat,face,skipMirrors){
+  const root=new THREE.Group(), add=(geo,m,x,y,z,parent=root)=>{ const o=new THREE.Mesh(geo,m); o.position.set(x,y,z); parent.add(o); return o; };
+  // 床
+  const fl=add(new THREE.PlaneGeometry(14,14),mat('floor'),0,0,0); fl.rotation.x=-Math.PI/2;
+  if(S===SCENES.four){ const wl=add(new THREE.PlaneGeometry(8,3.2),mat('wall'),0,1.6,-1.66); }
+  // 人（顔の向き＝S.face）
+  const person=new THREE.Group(); root.add(person); PERSONS.push(person);
+  person.position.set(S.P[0],0,S.P[1]); person.rotation.y=S.faceAngle;
+  add(new THREE.CylinderGeometry(.07,.07,.82,12),mat('leg'),-.09,.41,0,person);
+  add(new THREE.CylinderGeometry(.07,.07,.82,12),mat('leg'),.09,.41,0,person);
+  add(new THREE.CylinderGeometry(.2,.22,.58,20),mat('shirt'),0,1.11,0,person);
+  const head=add(new THREE.SphereGeometry(.13,24,16),mat('skin'),0,EYE_H-.01,0,person);
+  const hair=add(new THREE.SphereGeometry(.135,24,16,0,Math.PI*2,0,Math.PI*.55),mat('hair'),0,EYE_H+.01,-.012,person);
+  hair.rotation.x=-.5;
+  if(S===SCENES.L){
+    const pl=new THREE.Group(); pl.position.set(0,1.2,.3); person.add(pl);
+    add(new THREE.PlaneGeometry(.34,.34),mat('plateL'),0,0,.004,pl);                        // 表（L）は前むき
+    const bk=add(new THREE.PlaneGeometry(.34,.34),mat('plateBack'),0,0,-.004,pl); bk.rotation.y=Math.PI;
+  } else {
+    const t=add(new THREE.PlaneGeometry(.3,.3),mat('four'),0,1.22,-.205,person); t.rotation.y=Math.PI;   // 背中の4
+  }
+  // 鏡（うらの板と表の面）
+  MG.forEach((M,i)=>{
+    if(skipMirrors.includes(i)) return;
+    const g=new THREE.Group(); g.position.copy(M.mid);
+    g.quaternion.setFromUnitVectors(V3(0,0,1),M.n); root.add(g);
+    add(new THREE.BoxGeometry(M.w+.04,M.h+.04,.03),mat('frame'),0,0,-.02,g);
+    const f=add(new THREE.PlaneGeometry(M.w,M.h),face(i),0,0,.002,g); f.renderOrder=5;
+    if(M.hand){ const h=add(new THREE.CylinderGeometry(.018,.018,.22,8),mat('handle'),0,-M.h/2-.1,-.01,g); }
+  });
+  return { root, head, hair };
+}
+
+/* =========================================================
+   鏡の向こうを2段まで描く（ステンシル）
+   本物の世界で鏡 i の面に印 1+3i → その向こう（1段目）で、ほかの鏡 j の像の面に +1 → 2段目
+   ========================================================= */
+let S, MG, MAIN, LV1=[], LV2=[]; const PERSONS=[];
+const scene=new THREE.Scene(); lights(scene);
+function stencilMat(base, ref, clip, op){
+  return Object.assign(base, { side:THREE.DoubleSide, clippingPlanes:clip, stencilWrite:true, stencilRef:ref,
+    stencilFunc:THREE.EqualStencilFunc, stencilFail:THREE.KeepStencilOp, stencilZFail:THREE.KeepStencilOp, stencilZPass:op||THREE.KeepStencilOp });
+}
+function setup(key){
+  S=SCENES[key];
+  const dir = S.dirs.Y || [0,1];
+  S.faceAngle = key==='L' ? Math.atan2(S.dirs.Y[0], S.dirs.Y[1]) : 0;   // 人の向き（L：合わせ目を向く。4：鏡Aに背を向ける＝手前むき）
+  MG=mirrorGeom(S);
+  while(scene.children.length>2) scene.remove(scene.children[2]);
+  LV1=[]; LV2=[]; PERSONS.length=0;
+  // 本物の世界
+  MAIN=buildWorld(S,MG,n=>MAT[n](), i=>new THREE.MeshBasicMaterial({color:0xb7c4cf, stencilWrite:true, stencilRef:1+3*i,
+      stencilFunc:THREE.AlwaysStencilFunc, stencilZPass:THREE.ReplaceStencilOp}), []);
+  scene.add(MAIN.root);
+  // 1段目：鏡 i の向こう
+  MG.forEach((Mi,i)=>{
+    const sc=new THREE.Scene(); lights(sc);
+    const clip=[backPlane(Mi.n,Mi.mid)];
+    const w=buildWorld(S,MG, n=>stencilMat(MAT[n](),1+3*i,clip),
+      j=>stencilMat(new THREE.MeshBasicMaterial({color:0xa9b6c2}),1+3*i,clip,THREE.IncrementStencilOp), [i]);
+    w.root.matrixAutoUpdate=false; w.root.matrix.copy(reflMat(Mi)); sc.add(w.root);
+    LV1.push(sc);
+    // 2段目：鏡 i の中の、鏡 j の向こう
+    MG.forEach((Mj,j)=>{
+      if(j===i) return;
+      const sc2=new THREE.Scene(); lights(sc2);
+      const Ri=reflMat(Mi), nJ=Mj.n.clone().transformDirection(Ri), pJ=Mj.mid.clone().applyMatrix4(Ri);
+      const clip2=[backPlane(Mi.n,Mi.mid), backPlane(nJ,pJ)];
+      const w2=buildWorld(S,MG, n=>stencilMat(MAT[n](),2+3*i,clip2), k=>stencilMat(new THREE.MeshBasicMaterial({color:0x9aa7b3}),2+3*i,clip2), [i,j]);
+      w2.root.matrixAutoUpdate=false; w2.root.matrix.copy(Ri.clone().multiply(reflMat(Mj))); sc2.add(w2.root);
+      LV2.push(sc2);
+    });
+  });
+  // 名札
+  $('labels').innerHTML=''; LB.length=0;
+  MG.forEach(M=>LB.push(label(M.name, M.mid.clone().add(V3(0,M.h/2+.12,0)))));
+  LB.push(label(key==='L'?'P':'花子さん', V3(S.P[0],1.95,S.P[1])));
+  $('src').textContent=S.src;
+  $('segView').innerHTML=S.views.map(([v,t],k)=>`<button data-v="${v}" class="${k?'':'on'}">${t}</button>`).join('');
+  $('segView').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+  setView(S.views[0][0], true);
+}
+const LB=[];
+function label(text,pos){ const d=document.createElement('div'); d.className='lbl'; d.textContent=text; $('labels').appendChild(d); return {d,pos}; }
+const _v=new THREE.Vector3();
+function placeLabels(){
+  for(const L of LB){ _v.copy(L.pos).project(camera); const vis=_v.z<1&&Math.abs(_v.x)<1.05&&Math.abs(_v.y)<1.05&&view.mode!=='eye';
+    L.d.style.display=vis?'':'none'; if(vis){ L.d.style.left=((_v.x+1)/2*innerWidth)+'px'; L.d.style.top=((1-_v.y)/2*innerHeight)+'px'; } }
+}
+
+/* ---------- 視点 ---------- */
+const view={ mode:'eye', yaw:0, pitch:0, goal:null, orbit:{az:0,el:.9,dist:7,t:V3(0,.8,1.4)} };
+function setView(v,instant){
+  view.key=v;
+  $('segView').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  MAIN.head.visible = MAIN.hair.visible = !(v==='X'||v==='Y'||v==='eye');   // 自分の目から見るときは、自分の頭はかくす
+  if(S===SCENES.L && (v==='X'||v==='Y')){ const d=S.dirs[v]; for(const p of PERSONS) p.rotation.y=Math.atan2(d[0],d[1]); }   // 体の正面を X／Y に向ける（鏡の向こうの人も同じ）
+  if(v==='X'||v==='Y'){ const d=S.dirs[v]; view.mode='eye'; view.goal={yaw:Math.atan2(d[0],-d[1]), pitch:-.12}; }
+  else if(v==='eye'){ const B=MG[MG.length-1].mid; const dv=B.clone().sub(V3(S.P[0],EYE_H,S.P[1]));
+    view.mode='eye'; view.goal={yaw:Math.atan2(dv.x,-dv.z), pitch:Math.atan2(dv.y,Math.hypot(dv.x,dv.z))}; }
+  else if(v==='top'){ view.mode='orbit'; view.goal={az:0,el:1.45,dist:S===SCENES.L?8.5:6,t:S===SCENES.L?V3(0,0,1.6):V3(0,0,-.5)}; }
+  else { view.mode='orbit'; view.goal={az:1.35,el:.18,dist:5.2,t:V3(0,1,-.6)}; }
+  if(instant){ Object.assign(view, view.mode==='eye'?{yaw:view.goal.yaw,pitch:view.goal.pitch}:{}); if(view.mode!=='eye') Object.assign(view.orbit, view.goal, {t:view.goal.t.clone()}); view.goal=null; }
+  camera.fov = view.mode==='eye' ? 50 : 40; camera.updateProjectionMatrix();
+  info();
+}
+function stepCam(dt){
+  const k=1-Math.exp(-dt*4.5);
+  if(view.mode==='eye'){
+    if(view.goal){ view.yaw+=(view.goal.yaw-view.yaw)*k; view.pitch+=(view.goal.pitch-view.pitch)*k; if(Math.abs(view.goal.yaw-view.yaw)<1e-3) view.goal=null; }
+    const E=V3(S.P[0],EYE_H,S.P[1]); camera.position.copy(E); camera.up.set(0,1,0);
+    camera.lookAt(E.x+Math.sin(view.yaw)*Math.cos(view.pitch), E.y+Math.sin(view.pitch), E.z-Math.cos(view.yaw)*Math.cos(view.pitch));
+  } else {
+    const o=view.orbit;
+    if(view.goal && view.goal.t){ o.az+=(view.goal.az-o.az)*k; o.el+=(view.goal.el-o.el)*k; o.dist+=(view.goal.dist-o.dist)*k; o.t.lerp(view.goal.t,k);
+      if(Math.abs(view.goal.az-o.az)+Math.abs(view.goal.el-o.el)<1e-3) view.goal=null; }
+    camera.position.set(o.t.x+o.dist*Math.cos(o.el)*Math.sin(o.az), o.t.y+o.dist*Math.sin(o.el), o.t.z+o.dist*Math.cos(o.el)*Math.cos(o.az));
+    camera.up.set(0,1,0); camera.lookAt(o.t);
+  }
+}
+function info(){
+  const t={
+    X:'P から鏡Bをまっすぐ見ています。プレートの「L」は、鏡の中でどう見えるかな？',
+    Y:'P から、鏡Aと鏡Bの合わせ目を見ています。真ん中に見える「L」は、どう見えるかな？ 1枚の鏡のときとくらべよう。',
+    top:'上から見た図。ドラッグで回せます。',
+    eye:'花子さんの目から、手鏡Bを見ています。手鏡Bの中の鏡Aに、背中の「4」はどう見えるかな？',
+    side:'横から見た図。花子さんは鏡Aに背を向けて、手鏡Bを顔の前に持っています。ドラッグで回せます。',
+  }[view.key];
+  $('infobar').innerHTML=t+(view.mode==='eye'?'　<span style="font-size:12.5px;color:#6e6053">ドラッグで見回せます。</span>':'');
+}
+
+/* ---------- 操作 ---------- */
+let drag=null;
+$('gl').addEventListener('pointerdown',e=>{ drag={x:e.clientX,y:e.clientY}; $('gl').setPointerCapture(e.pointerId); });
+addEventListener('pointermove',e=>{
+  if(!drag) return; const dx=e.clientX-drag.x, dy=e.clientY-drag.y; drag.x=e.clientX; drag.y=e.clientY; view.goal=null;
+  if(view.mode==='eye'){ view.yaw-=dx*.004; view.pitch=Math.max(-.9,Math.min(.6,view.pitch+dy*.003)); }
+  else { view.orbit.az-=dx*.006; view.orbit.el=Math.max(.05,Math.min(1.5,view.orbit.el+dy*.005)); }
+});
+addEventListener('pointerup',()=>drag=null); addEventListener('pointercancel',()=>drag=null);
+$('gl').addEventListener('wheel',e=>{ e.preventDefault(); if(view.mode!=='eye') view.orbit.dist=Math.max(2,Math.min(20,view.orbit.dist*(1+e.deltaY*.0012))); },{passive:false});
+document.querySelectorAll('#segScene button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('#segScene button').forEach(x=>x.classList.toggle('on',x===b)); setup(b.dataset.s); });
+addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+
+/* ---------- 毎フレーム ---------- */
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now; stepCam(dt);
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.clear(true,true,true);
+  renderer.render(scene,camera);
+  renderer.clearDepth(); for(const s of LV1) renderer.render(s,camera);
+  renderer.clearDepth(); for(const s of LV2) renderer.render(s,camera);
+  placeLabels();
+  requestAnimationFrame(frame);
+}
+setup(new URLSearchParams(location.search).get('s')==='four'?'four':'L');
+requestAnimationFrame(frame);
+window.__m={ setup, setView, get S(){return S;}, get MG(){return MG;}, camera };
+</script>
+</body>
+</html>

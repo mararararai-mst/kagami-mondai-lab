@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>まち針と2枚の鏡 3D｜鏡の問題ラボ</title>
+<meta name="description" content="板の上の鏡・ついたて・まち針を3Dで。斜めから真上へ、点Pの目の高さへ視点を動かして、鏡にうつるまち針を確かめる。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  /* 3Dの操作パネル＝凸レンズ3Dラボと同じ（半透明の白＋ふんわり影） */
+  :root{ --ink:#5a4a3a; --sub:#6e6053; --acc:#b8540f; --cw:228px;
+    --font:'Zen Maru Gothic','UD デジタル 教科書体 NK-R','Yu Gothic UI','Meiryo',sans-serif; }
+  html,body{margin:0;height:100%;overflow:hidden;background:#0f1216;font-family:var(--font);color:var(--ink);font-weight:500;}
+  canvas#gl{position:fixed;inset:0;width:100vw;height:100vh;touch-action:none;display:block;}
+  .panel{position:fixed;background:rgba(255,255,255,.93);border-radius:18px;box-shadow:0 4px 14px rgba(0,0,0,.28);}
+  #topbar{top:12px;left:12px;padding:7px 10px;display:flex;align-items:center;gap:10px;max-width:calc(100vw - var(--cw) - 48px);box-sizing:border-box;}
+  #topbar h1{margin:0;font-size:16px;font-weight:900;white-space:nowrap;}
+  #topbar a{font-size:13px;font-weight:900;color:#fff;background:#7b4fc9;border-radius:12px;padding:7px 12px;text-decoration:none;white-space:nowrap;}
+  #topbar small{font-size:11.5px;color:var(--sub);font-weight:700;white-space:nowrap;}
+  #ctrl{top:12px;right:12px;width:var(--cw);padding:10px;display:flex;flex-direction:column;gap:8px;box-sizing:border-box;max-height:calc(100vh - 24px);overflow-y:auto;}
+  .sec{background:#f6efe5;border-radius:13px;padding:8px;}
+  .sec h3{margin:0 0 6px;font-size:12px;font-weight:900;color:var(--sub);}
+  .seg{display:flex;gap:5px;flex-wrap:wrap;}
+  .seg button,.btn{flex:1 1 auto;border:none;border-radius:10px;padding:8px 6px;background:#fff;color:var(--ink);
+    font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;line-height:1.25;transition:transform .08s;}
+  .seg button:active,.btn:active{transform:translateY(3px);}
+  .seg button.on,.btn.on{background:var(--acc);color:#fff;}
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:6px;}
+  .pad button{border:none;border-radius:10px;padding:7px 0;background:#fff;font-family:var(--font);font-weight:900;font-size:14px;color:var(--ink);cursor:pointer;transition:transform .08s;}
+  .pad button:active{transform:translateY(3px);}
+  .pad .blank{visibility:hidden;}
+  .moved{font-size:12px;font-weight:700;color:var(--sub);margin-top:6px;line-height:1.6;}
+  #infobar{left:12px;right:calc(var(--cw) + 24px);bottom:12px;padding:10px 16px;font-size:15px;line-height:1.7;text-wrap:pretty;}
+  #infobar b{color:var(--acc);font-weight:900;}
+  .lbl{position:fixed;left:0;top:0;transform:translate(-50%,-130%);background:rgba(255,255,255,.92);color:var(--ink);font-size:13px;font-weight:900;
+    padding:1px 7px;border-radius:9px;pointer-events:none;white-space:nowrap;}
+  .lbl.seen{background:var(--acc);color:#fff;}
+  .lbl.sm{font-size:11.5px;font-weight:700;transform:translate(-50%,-50%);}
+  #hint{position:fixed;pointer-events:none;background:var(--acc);color:#fff;font-weight:900;font-size:14px;padding:6px 12px;border-radius:12px;white-space:nowrap;transition:opacity .4s;
+    left:calc((100vw - var(--cw) - 24px)/2);bottom:86px;transform:translateX(-50%);max-width:calc(100vw - var(--cw) - 48px);white-space:normal;text-align:center;}
+  @media (max-width:760px){
+    :root{--cw:170px;}
+    #topbar h1{display:none;} #topbar small{display:none;}
+    #infobar{font-size:13.5px;}
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="topbar">
+  <a href="index.html">◀ 問題をえらぶ</a>
+  <h1>まち針と2枚の鏡（福井）</h1>
+  <small>プリント：鏡のしくみ、反射の法則 p.3</small>
+</div>
+
+<div class="panel" id="ctrl">
+  <div class="sec">
+    <h3>視点</h3>
+    <div class="seg" id="segView">
+      <button data-v="naname" class="on">斜め</button>
+      <button data-v="ue">真上</button>
+      <button data-v="eye">Pの目</button>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>見せるもの</h3>
+    <div class="seg" style="flex-direction:column">
+      <button id="tZone" class="on">鏡にうつって見える範囲</button>
+      <button id="tRay">うつるまち針の光の道すじ</button>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>鏡を動かす</h3>
+    <div class="seg" id="segMir">
+      <button data-m="0" class="on">鏡1</button>
+      <button data-m="1">鏡2</button>
+    </div>
+    <div class="pad">
+      <button class="blank">.</button><button data-d="2">②↑</button><button class="blank">.</button>
+      <button data-d="1">①←</button><button data-d="4">↓</button><button data-d="3">③→</button>
+    </div>
+    <div class="moved" id="moved"></div>
+    <button class="btn" id="btnBack" style="width:100%;margin-top:6px">鏡をもとの位置に</button>
+  </div>
+</div>
+
+<div class="panel" id="infobar"></div>
+<div id="hint">まち針をタップしよう</div>
+<div id="labels"></div>
+
+<script src="three.min.js"></script>
+<script>
+/* =========================================================
+   配置（プリント図6の方眼をそのまま写した。1マス＝1）
+   x：右、z：手前（図の下）。板は 18×13 マス。鏡の面は z=5（手前むき）
+   ========================================================= */
+const BW = 18, BD = 13;
+const PIN_H = 2.2;                  // まち針の頭の高さ（目の高さ）
+const MIR_H = 3.0;                  // 鏡の高さ
+const PINS = [ ['A',6,6], ['B',9,7], ['C',12,6], ['D',7,10], ['E',10,9], ['F',14,9] ];
+const SCREEN = { x:4.2, z1:9, z2:12, h:3.2, t:.32 };      // ついたて（図6の太い黒の線）
+const MIR0 = [ { x1:4, x2:6, z:5, name:'鏡1' }, { x1:6, x2:9, z:5, name:'鏡2' } ];
+const P0 = [0, 10];
+
+const S = { P:[...P0], mirrors: MIR0.map(m=>({...m})), sel:0, zone:true, ray:false, tapped:new Set(), view:'naname' };
+
+const $ = id => document.getElementById(id);
+const V3 = (x,y,z) => new THREE.Vector3(x,y,z);
+
+/* ---------- 2Dの計算（上から見た xz 平面） ---------- */
+function segX(p1,p2,q1,q2){   // 線分どうしが交わるか
+  const r=[p2[0]-p1[0],p2[1]-p1[1]], s=[q2[0]-q1[0],q2[1]-q1[1]], den=r[0]*s[1]-r[1]*s[0];
+  if(Math.abs(den)<1e-12) return false;
+  const qp=[q1[0]-p1[0],q1[1]-p1[1]], t=(qp[0]*s[1]-qp[1]*s[0])/den, u=(qp[0]*r[1]-qp[1]*r[0])/den;
+  return t>1e-9 && t<1-1e-9 && u>=0 && u<=1;
+}
+const blocked = (a,b) => segX(a,b,[SCREEN.x,SCREEN.z1],[SCREEN.x,SCREEN.z2]);
+// まち針Qが、Pから鏡mにうつって見えるなら、鏡の上の点 [x,z] を返す
+function seenVia(P,Q,m){
+  if(P[1] <= m.z || Q[1] <= m.z) return null;                 // 鏡の表がわにいないと見えない
+  const pz = 2*m.z - P[1];                                      // Pの像
+  const x = P[0] + (Q[0]-P[0]) * (m.z - pz) / (Q[1] - pz);
+  if(x < m.x1 - 1e-9 || x > m.x2 + 1e-9) return null;
+  const H = [x, m.z];
+  if(blocked(Q,H) || blocked(H,P)) return { H, blocked:true };
+  return { H, blocked:false };
+}
+function seenPin(name){
+  const pin = PINS.find(p=>p[0]===name), Q=[pin[1],pin[2]];
+  for(const [i,m] of S.mirrors.entries()){ const r=seenVia(S.P,Q,m); if(r && !r.blocked) return { i, H:r.H }; }
+  for(const [i,m] of S.mirrors.entries()){ const r=seenVia(S.P,Q,m); if(r && r.blocked) return { i, H:r.H, blocked:true }; }
+  return null;
+}
+
+/* =========================================================
+   three.js の準備
+   ========================================================= */
+const renderer = new THREE.WebGLRenderer({ canvas:$('gl'), antialias:true, stencil:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.autoClear = false;
+renderer.localClippingEnabled = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x0f1216);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, .1, 400);
+const scene = new THREE.Scene();
+
+function addLights(sc, shadow){
+  sc.add(new THREE.HemisphereLight(0xe6ecf5, 0x2a2622, .75));
+  const d = new THREE.DirectionalLight(0xfff3e2, .75); d.position.set(7, 40, 12); d.target.position.set(9,0,6.5);   // 真上寄り：影を短くして、真上から見たときにじゃまにしない
+  sc.add(d); sc.add(d.target);
+  if(shadow){ d.castShadow = true; d.shadow.mapSize.set(1024,1024);
+    Object.assign(d.shadow.camera,{left:-16,right:16,top:16,bottom:-16,near:1,far:80}); d.shadow.bias=-.0008; }
+}
+addLights(scene, true);
+
+/* ---------- 方眼の板のテクスチャ ---------- */
+function gridTex(){
+  const k=64, c=document.createElement('canvas'); c.width=BW*k; c.height=BD*k;
+  const g=c.getContext('2d'); g.fillStyle='#f6f4ee'; g.fillRect(0,0,c.width,c.height);
+  g.strokeStyle='#c9c0b2'; g.lineWidth=2;
+  for(let i=0;i<=BW;i++){ g.beginPath(); g.moveTo(i*k,0); g.lineTo(i*k,c.height); g.stroke(); }
+  for(let j=0;j<=BD;j++){ g.beginPath(); g.moveTo(0,j*k); g.lineTo(c.width,j*k); g.stroke(); }
+  const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding; t.anisotropy=8; return t;
+}
+const GRID = gridTex();
+
+/* ---------- 材質（鏡の向こうの世界にも同じものを使う） ---------- */
+const MATS = {
+  board:  () => new THREE.MeshStandardMaterial({ map:GRID, roughness:.9 }),
+  side:   () => new THREE.MeshStandardMaterial({ color:0xe9e5dc, roughness:.95 }),
+  desk:   () => new THREE.MeshStandardMaterial({ color:0x6b4a32, roughness:.8 }),
+  needle: () => new THREE.MeshStandardMaterial({ color:0xc9ced4, roughness:.3, metalness:.8 }),
+  head:   () => new THREE.MeshStandardMaterial({ color:0xd8344c, roughness:.35 }),
+  screen: () => new THREE.MeshStandardMaterial({ color:0x2b2830, roughness:.7 }),
+  mback:  () => new THREE.MeshStandardMaterial({ color:0x8f99a3, roughness:.5, metalness:.3 }),
+  mface:  () => new THREE.MeshBasicMaterial({ color:0xb9c6d0 }),
+  eye:    () => new THREE.MeshStandardMaterial({ color:0x3a3040, roughness:.5 }),
+};
+
+/* 世界をつくる（本物の世界と、鏡の向こうの世界で同じ関数を使う） */
+function buildWorld(matOf, isMain){
+  const w = { root:new THREE.Group(), mirrors:[], eye:null };
+  const add = (geo, mat, x,y,z) => { const m=new THREE.Mesh(geo,mat); m.position.set(x,y,z); if(isMain){m.castShadow=true;m.receiveShadow=true;} w.root.add(m); return m; };
+  // 机と板
+  add(new THREE.BoxGeometry(BW+8, 1, BD+8), matOf('desk'), BW/2, -1.1, BD/2);
+  add(new THREE.BoxGeometry(BW, .6, BD), matOf('side'), BW/2, -.3, BD/2);
+  const top = add(new THREE.PlaneGeometry(BW, BD), matOf('board'), BW/2, .002, BD/2); top.rotation.x = -Math.PI/2;
+  // まち針
+  for(const [, x, z] of PINS){
+    add(new THREE.CylinderGeometry(.035,.035,PIN_H,8), matOf('needle'), x, PIN_H/2, z);
+    add(new THREE.SphereGeometry(.2,20,14), matOf('head'), x, PIN_H, z);
+  }
+  // ついたて
+  add(new THREE.BoxGeometry(SCREEN.t, SCREEN.h, SCREEN.z2-SCREEN.z1), matOf('screen'), SCREEN.x+SCREEN.t/2, SCREEN.h/2, (SCREEN.z1+SCREEN.z2)/2);
+  // 鏡（うらの板＋表の面）
+  for(let i=0;i<2;i++){
+    const g = new THREE.Group();
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1, MIR_H, .14), matOf('mback')); back.position.set(.5, MIR_H/2, -.08);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(1, MIR_H), matOf(isMain?'mfaceMain'+i:'mface')); face.position.set(.5, MIR_H/2, .001);
+    if(isMain){ back.castShadow=true; back.receiveShadow=true; }
+    g.add(back); g.add(face); w.root.add(g); w.mirrors.push({ g, back, face });
+  }
+  // 点Pの目
+  w.eye = new THREE.Group();
+  const e1 = new THREE.Mesh(new THREE.SphereGeometry(.26,20,14), matOf('eye'));
+  w.eye.add(e1); w.root.add(w.eye);
+  return w;
+}
+function syncWorld(w){
+  S.mirrors.forEach((m,i)=>{ const o=w.mirrors[i]; o.g.position.set(m.x1, 0, m.z); o.g.scale.set(m.x2-m.x1, 1, 1); });
+  w.eye.position.set(S.P[0], PIN_H, S.P[1]);
+}
+
+// 本物の世界：鏡の面はステンシルに印をつける（そこにだけ鏡の向こうを描く）
+const mainMat = name => {
+  if(name.startsWith('mfaceMain')){
+    const i = +name.slice(-1);
+    return new THREE.MeshBasicMaterial({ color:0xaebccb, stencilWrite:true, stencilRef:i+1,
+      stencilFunc:THREE.AlwaysStencilFunc, stencilZPass:THREE.ReplaceStencilOp });
+  }
+  return MATS[name]();
+};
+const MAIN = buildWorld(mainMat, true);
+scene.add(MAIN.root);
+
+// 鏡の向こうの世界（鏡ごとに1つ。鏡の面で折り返し、鏡より手前は切り落とす）
+const REFL = [0,1].map(i=>{
+  const sc = new THREE.Scene(); addLights(sc,false);
+  const plane = new THREE.Plane(V3(0,0,-1), 5);
+  const reflMat = name => { const m = MATS[name](); Object.assign(m, { side:THREE.DoubleSide, clippingPlanes:[plane],
+    stencilWrite:true, stencilRef:i+1, stencilFunc:THREE.EqualStencilFunc,
+    stencilFail:THREE.KeepStencilOp, stencilZFail:THREE.KeepStencilOp, stencilZPass:THREE.KeepStencilOp });
+    if(m.color && name==='mface') m.color.set(0x9eabb7); return m; };
+  const w = buildWorld(reflMat, false);
+  const holder = new THREE.Group(); holder.add(w.root); sc.add(holder);
+  return { sc, w, holder, plane };
+});
+function syncAll(){
+  syncWorld(MAIN);
+  REFL.forEach((r,i)=>{ syncWorld(r.w); const mz=S.mirrors[i].z;
+    r.w.mirrors[i].g.visible = false;                     // 自分自身の鏡は、鏡の向こうには描かない
+    r.holder.scale.z = -1; r.holder.position.z = 2*mz;   // z → 2mz − z
+    r.plane.constant = mz; });                             // z ≤ mz の側だけ残す
+}
+
+/* ---------- 板の上の「見える範囲」と光の道すじ ---------- */
+const zoneMat = new THREE.MeshBasicMaterial({ color:0xf07a1f, transparent:true, opacity:.28, depthWrite:false, side:THREE.DoubleSide });
+const zoneMeshes = [0,1].map(()=>{ const m=new THREE.Mesh(new THREE.BufferGeometry(), zoneMat); m.renderOrder=2; scene.add(m); return m; });
+function clipRect(poly){   // 板の四角で切る（Sutherland–Hodgman）
+  const edges=[ p=>p[0]>=0, p=>p[0]<=BW, p=>p[1]>=0, p=>p[1]<=BD ];
+  const cut=[ (a,b)=>lerpX(a,b,0), (a,b)=>lerpX(a,b,BW), (a,b)=>lerpZ(a,b,0), (a,b)=>lerpZ(a,b,BD) ];
+  function lerpX(a,b,x){ const t=(x-a[0])/(b[0]-a[0]); return [x, a[1]+(b[1]-a[1])*t]; }
+  function lerpZ(a,b,z){ const t=(z-a[1])/(b[1]-a[1]); return [a[0]+(b[0]-a[0])*t, z]; }
+  let out=poly;
+  edges.forEach((inside,k)=>{ const inp=out; out=[]; for(let i=0;i<inp.length;i++){ const a=inp[i], b=inp[(i+1)%inp.length];
+    if(inside(b)){ if(!inside(a)) out.push(cut[k](a,b)); out.push(b); } else if(inside(a)) out.push(cut[k](a,b)); } });
+  return out;
+}
+function updateZones(){
+  S.mirrors.forEach((m,i)=>{
+    const mesh = zoneMeshes[i];
+    if(!S.zone || S.view==='eye' || S.P[1] <= m.z){ mesh.visible=false; return; }
+    const Pz = 2*m.z - S.P[1], Pp=[S.P[0],Pz], K=80;
+    const a=[m.x1,m.z], b=[m.x2,m.z];
+    const fa=[a[0]+(a[0]-Pp[0])*K, a[1]+(a[1]-Pp[1])*K], fb=[b[0]+(b[0]-Pp[0])*K, b[1]+(b[1]-Pp[1])*K];
+    const poly = clipRect([a,fa,fb,b]);
+    if(poly.length<3){ mesh.visible=false; return; }
+    const pos=[]; for(let k=1;k<poly.length-1;k++) for(const p of [poly[0],poly[k],poly[k+1]]) pos.push(p[0], .02+i*.002, p[1]);
+    mesh.geometry.dispose(); mesh.geometry=new THREE.BufferGeometry(); mesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    mesh.visible=true;
+  });
+}
+const rayMat = new THREE.MeshBasicMaterial({ color:0xf07a1f });
+const UNIT = new THREE.CylinderGeometry(1,1,1,10,1,true);
+const rayPool=[]; let rayN=0;
+function seg(p1,p2,r=.05){
+  let m=rayPool[rayN]; if(!m){ m=new THREE.Mesh(UNIT,rayMat); scene.add(m); rayPool.push(m); } rayN++;
+  const d=new THREE.Vector3().subVectors(p2,p1), L=d.length(); m.visible=L>1e-4; if(!m.visible) return;
+  m.position.copy(p1).addScaledVector(d,.5); m.quaternion.setFromUnitVectors(V3(0,1,0), d.normalize()); m.scale.set(r,L,r);
+}
+function dashed(p1,p2){ const L=p1.distanceTo(p2), d=new THREE.Vector3().subVectors(p2,p1).normalize();
+  for(let t=0;t<L;t+=.55) seg(p1.clone().addScaledVector(d,t), p1.clone().addScaledVector(d,Math.min(L,t+.3)), .035); }
+function updateRays(){
+  rayN=0;
+  const show = new Set(S.view==='eye' ? [] : S.tapped); if(S.ray && S.view!=='eye') PINS.forEach(p=>{ if(seenPin(p[0]) && !seenPin(p[0]).blocked) show.add(p[0]); });
+  for(const name of show){
+    const r = seenPin(name); if(!r || r.blocked) continue;
+    const pin=PINS.find(p=>p[0]===name), Q=V3(pin[1],PIN_H,pin[2]), H=V3(r.H[0],PIN_H,r.H[1]), E=V3(S.P[0],PIN_H,S.P[1]);
+    seg(Q,H); seg(H, E.clone().addScaledVector(new THREE.Vector3().subVectors(H,E).normalize(), .3));
+    const mz=S.mirrors[r.i].z; dashed(H, V3(pin[1],PIN_H,2*mz-pin[2]));
+  }
+  for(let i=rayN;i<rayPool.length;i++) rayPool[i].visible=false;
+}
+
+/* ---------- 名札 ---------- */
+const LB = {};
+function label(key, text, cls=''){ const d=document.createElement('div'); d.className='lbl '+cls; d.textContent=text; $('labels').appendChild(d); LB[key]=d; return d; }
+PINS.forEach(p=>{ label(p[0], p[0]); label('img'+p[0], p[0]+'の像', 'seen'); });
+label('P','P'); label('m0','鏡1','sm'); label('m1','鏡2','sm'); label('scr','ついたて','sm');
+const _v = new THREE.Vector3();
+function place(key, x,y,z){
+  const d=LB[key]; _v.set(x,y,z).project(camera);
+  const vis = _v.z<1 && Math.abs(_v.x)<1.1 && Math.abs(_v.y)<1.1;
+  d.style.display = vis ? '' : 'none'; if(!vis) return;
+  d.style.left = ((_v.x+1)/2*innerWidth)+'px'; d.style.top = ((1-_v.y)/2*innerHeight)+'px';
+}
+function placeLabels(){
+  $('hint').style.bottom=($('infobar').offsetHeight+24)+'px';   // 説明の文のすぐ上
+  const eyeView = S.view==='eye';
+  for(const [n,x,z] of PINS){
+    place(n, x, PIN_H+.25, z); const r=seenPin(n); LB[n].classList.toggle('seen', !!(r && !r.blocked));
+    if(eyeView && blocked(S.P,[x,z])) LB[n].style.display='none';             // ついたてにかくれて直接は見えない
+    if(eyeView && r && !r.blocked){ place('img'+n, x, PIN_H+.25, 2*S.mirrors[r.i].z - z); } else LB['img'+n].style.display='none';
+  }
+  if(eyeView) LB.P.style.display='none'; else place('P', S.P[0], PIN_H+.3, S.P[1]);
+  S.mirrors.forEach((m,i)=>place('m'+i, (m.x1+m.x2)/2, MIR_H+.45, m.z-.1));
+  place('scr', SCREEN.x+.2, SCREEN.h+.45, (SCREEN.z1+SCREEN.z2)/2);
+}
+
+/* =========================================================
+   カメラ（斜め・真上・Pの目）
+   ========================================================= */
+const cam = { t:V3(9,0,6.8), az:-.42, el:.62, dist:30, mode:'orbit', yaw:0, pitch:0 };
+let goal = null;
+function viewOffsets(){ const cw=$('ctrl').offsetWidth+24, bot=$('infobar').offsetHeight+24, top=$('topbar').offsetHeight+12;
+  return { k:cw/2, j:Math.max(0,(bot-top)/2) }; }
+function applyOffset(){
+  const o=viewOffsets(), W=innerWidth, H=innerHeight;
+  camera.aspect=W/H;
+  if(cam.mode==='eye') camera.clearViewOffset(); else camera.setViewOffset(W+2*o.k, H+2*o.j, 2*o.k, 2*o.j, W, H);
+  camera.updateProjectionMatrix();
+}
+function fitDist(spanW, spanH){
+  const o=viewOffsets(), freeW=Math.max(200, innerWidth-2*o.k-24), freeH=Math.max(160, innerHeight-2*o.j-80);
+  const tanV=Math.tan(camera.fov*Math.PI/360), Hv=innerHeight+2*o.j;
+  return Math.max(spanW*Hv/(2*tanV*freeW), spanH*Hv/(2*tanV*freeH));
+}
+function setView(v, instant){
+  S.view=v; document.querySelectorAll('#segView button').forEach(b=>b.classList.toggle('on', b.dataset.v===v));
+  if(v==='eye'){
+    cam.mode='eye'; applyOffset();
+    const m=S.mirrors, cx=(m[0].x1+m[1].x2)/2, cz=Math.min(m[0].z,m[1].z);
+    const yaw=Math.atan2(cx-S.P[0], -(cz-S.P[1])); goal={ eye:true, yaw, pitch:-.05 };
+    camera.fov=55;
+  } else {
+    cam.mode='orbit'; camera.fov = v==='ue' ? 12 : 40; applyOffset();
+    if(v==='ue') goal={ t:V3(BW/2,0,BD/2), az:0, el:1.553, dist:fitDist(BW+1.5, BD+1.5) };
+    else goal={ t:V3(BW/2,0,BD/2+.4), az:-.42, el:.62, dist:fitDist(BW+3, BD*.75+3) };
+  }
+  camera.updateProjectionMatrix();
+  updateZones(); updateRays(); if(!instant) $('hint').style.opacity=0;
+  if(instant && goal){ if(goal.eye){ cam.yaw=goal.yaw; cam.pitch=goal.pitch; } else { cam.t.copy(goal.t); cam.az=goal.az; cam.el=goal.el; cam.dist=goal.dist; } goal=null; }
+  info();
+}
+function stepCam(dt){
+  const k=1-Math.exp(-dt*4.2);
+  if(cam.mode==='eye'){
+    if(goal){ cam.yaw+=(goal.yaw-cam.yaw)*k; cam.pitch+=(goal.pitch-cam.pitch)*k; if(Math.abs(goal.yaw-cam.yaw)<1e-3) goal=null; }
+    const E=V3(S.P[0], PIN_H, S.P[1]);
+    camera.position.copy(E);
+    camera.lookAt(E.x+Math.sin(cam.yaw)*Math.cos(cam.pitch), E.y+Math.sin(cam.pitch), E.z-Math.cos(cam.yaw)*Math.cos(cam.pitch));
+    return;
+  }
+  if(goal){ cam.az+=(goal.az-cam.az)*k; cam.el+=(goal.el-cam.el)*k; cam.dist+=(goal.dist-cam.dist)*k; cam.t.lerp(goal.t,k);
+    if(Math.abs(goal.az-cam.az)+Math.abs(goal.el-cam.el)<1e-3 && Math.abs(goal.dist-cam.dist)<.02) goal=null; }
+  camera.position.set(cam.t.x+cam.dist*Math.cos(cam.el)*Math.sin(cam.az), cam.t.y+cam.dist*Math.sin(cam.el), cam.t.z+cam.dist*Math.cos(cam.el)*Math.cos(cam.az));
+  camera.up.set(0,1,0); camera.lookAt(cam.t);
+}
+
+/* =========================================================
+   操作：まち針をタップ・Pをつかむ・まわす
+   ========================================================= */
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+const boardPlane=new THREE.Plane(V3(0,1,0),0);
+let drag=null; const touches=new Map(); let pinch=0;
+function setNDC(e){ ndc.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1); ray.setFromCamera(ndc,camera); }
+function pickPin(){
+  let best=null, bd=.45;
+  for(const [n,x,z] of PINS){ const d=ray.ray.distanceToPoint(V3(x,PIN_H,z)); if(d<bd){ bd=d; best=n; } }
+  return best;
+}
+function pickP(){ return S.view!=='eye' && ray.ray.distanceToPoint(V3(S.P[0],PIN_H,S.P[1]))<.6; }
+$('gl').addEventListener('pointerdown',e=>{
+  touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(touches.size>=2){ drag=null; pinch=span(); return; }
+  setNDC(e);
+  const pin=pickPin();
+  if(pickP()){ drag={type:'P'}; $('gl').setPointerCapture(e.pointerId); return; }
+  drag={ type:'rot', x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, pin };
+});
+const span=()=>{ const a=[...touches.values()]; return a.length<2?0:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y); };
+addEventListener('pointermove',e=>{
+  if(touches.has(e.pointerId)) touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(touches.size>=2){ const d=span(); if(pinch>0&&d>0&&cam.mode!=='eye'){ cam.dist=Math.max(6,Math.min(160,cam.dist*pinch/d)); goal=null; } pinch=d; return; }
+  if(!drag) return;
+  if(drag.type==='P'){
+    setNDC(e); const p=new THREE.Vector3(); if(!ray.ray.intersectPlane(boardPlane,p)) return;
+    const x=Math.max(0,Math.min(BW,Math.round(p.x))), z=Math.max(0,Math.min(BD,Math.round(p.z)));
+    if(PINS.some(q=>q[1]===x&&q[2]===z)) return;
+    if(S.P[0]!==x||S.P[1]!==z){ S.P=[x,z]; refresh(); }
+    return;
+  }
+  const dx=e.clientX-drag.x, dy=e.clientY-drag.y; drag.x=e.clientX; drag.y=e.clientY;
+  if(Math.hypot(e.clientX-drag.x0,e.clientY-drag.y0)<8) return;
+  drag.pin=null; goal=null;
+  if(cam.mode==='eye'){ cam.yaw-=dx*.004; cam.pitch=Math.max(-.6,Math.min(.5,cam.pitch+dy*.003)); return; }
+  cam.az=Math.max(-1.6,Math.min(1.6,cam.az-dx*.006)); cam.el=Math.max(.12,Math.min(1.553,cam.el+dy*.005));
+  if(S.view!=='free'){
+    if(camera.fov!==40){ cam.dist*=Math.tan(camera.fov*Math.PI/360)/Math.tan(40*Math.PI/360); camera.fov=40; applyOffset(); }   // 真上の望遠から、ふつうの画角にもどす
+    S.view='free'; document.querySelectorAll('#segView button').forEach(b=>b.classList.remove('on')); info();
+  }
+});
+function endP(e){
+  touches.delete(e.pointerId); pinch=0;
+  if(drag && drag.type==='rot' && drag.pin){ const n=drag.pin; if(S.tapped.has(n)) S.tapped.delete(n); else S.tapped.add(n); S.last=n; refresh(); $('hint').style.opacity=0; }
+  drag=null;
+}
+addEventListener('pointerup',endP); addEventListener('pointercancel',endP);
+$('gl').addEventListener('wheel',e=>{ e.preventDefault(); if(cam.mode==='eye') return; cam.dist=Math.max(6,Math.min(160,cam.dist*(1+e.deltaY*.0012))); goal=null; },{passive:false});
+
+/* ---------- ボタン ---------- */
+document.querySelectorAll('#segView button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+$('tZone').onclick=()=>{ S.zone=!S.zone; $('tZone').classList.toggle('on',S.zone); refresh(); };
+$('tRay').onclick=()=>{ S.ray=!S.ray; $('tRay').classList.toggle('on',S.ray); refresh(); };
+document.querySelectorAll('#segMir button').forEach(b=>b.onclick=()=>{ S.sel=+b.dataset.m; document.querySelectorAll('#segMir button').forEach(x=>x.classList.toggle('on',x===b)); });
+document.querySelectorAll('.pad button[data-d]').forEach(b=>b.onclick=()=>moveMirror(+b.dataset.d));
+$('btnBack').onclick=()=>{ S.mirrors=MIR0.map(m=>({...m})); refresh(); };
+function moveMirror(d){
+  const m=S.mirrors[S.sel], o=S.mirrors[1-S.sel];
+  const n={...m}; if(d===1){n.x1--;n.x2--;} if(d===3){n.x1++;n.x2++;} if(d===2) n.z--; if(d===4) n.z++;
+  if(n.x1<0||n.x2>BW||n.z<1||n.z>=S.P[1]) return;
+  if(n.z===o.z && n.x1<o.x2 && o.x1<n.x2) return;              // 同じ列で重ならない
+  if(PINS.some(p=>p[2]===n.z && p[1]>=n.x1 && p[1]<=n.x2)) return;
+  S.mirrors[S.sel]=n; refresh();
+}
+function movedText(){
+  const words=S.mirrors.map((m,i)=>{ const o=MIR0[i], dx=m.x1-o.x1, dz=m.z-o.z, w=[];
+    if(dx<0) w.push(`①へ${-dx}マス`); if(dx>0) w.push(`③へ${dx}マス`); if(dz<0) w.push(`②へ${-dz}マス`); if(dz>0) w.push(`手前へ${dz}マス`);
+    return w.length? `${o.name}：${w.join('・')}` : ''; }).filter(Boolean);
+  return words.length? words.join('<br>') : '鏡はもとの位置';
+}
+
+/* ---------- 文 ---------- */
+function info(){
+  let html='';
+  const last=S.last && S.tapped.has(S.last) ? S.last : null;
+  if(last){
+    const r=seenPin(last);
+    if(r && !r.blocked) html=`<b>${last}</b> から出た光は、${S.mirrors[r.i].name}ではね返って、P に届く。だから ${S.mirrors[r.i].name} にうつって見える。`;
+    else if(r && r.blocked) html=`<b>${last}</b> から出た光は、${S.mirrors[r.i].name}ではね返るけれど、ついたてにさえぎられて P に届かない。`;
+    else html=`<b>${last}</b> から出た光は、鏡ではね返っても P に届かない。`;
+  } else if(S.view==='eye') html='P の目の高さから見ています。鏡の中に、どのまち針がうつっているかな？ ドラッグで見回せます。';
+  else if(S.view==='ue') html='真上から見ると、プリントの図6と同じ。色のついた範囲にあるまち針が、P から鏡にうつって見えます。P はつかんで動かせます。';
+  else if(S.view==='free') html='ドラッグで回して見ています。「斜め」「真上」「Pの目」のボタンで、決まった見方にもどれます。';
+  else html='まち針をタップすると、光の道すじが出ます。「真上」「Pの目」で、見え方を確かめよう。';
+  $('infobar').innerHTML=html;
+  $('moved').innerHTML=movedText();
+}
+
+function refresh(){ syncAll(); updateZones(); updateRays(); info(); }
+
+/* ---------- 毎フレーム ---------- */
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  stepCam(dt);
+  renderer.clear(true,true,true);
+  renderer.render(scene,camera);          // 本物の世界（鏡の面にステンシルの印がつく）
+  renderer.clearDepth();
+  for(const r of REFL) renderer.render(r.sc,camera);   // 鏡の向こう（印のある所にだけ描く）
+  placeLabels();
+  requestAnimationFrame(frame);
+}
+addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight); setView(S.view==='free'?'naname':S.view,true); });
+
+refresh();
+setView('naname', true);
+requestAnimationFrame(frame);
+window.__k3 = { S, seenPin, setView, refresh, moveMirror, cam, camera };
+</script>
+</body>
+</html>
