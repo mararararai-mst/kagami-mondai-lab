@@ -38,6 +38,7 @@
   .lbl{position:fixed;left:0;top:0;transform:translate(-50%,-130%);background:rgba(255,255,255,.92);color:var(--ink);font-size:13px;font-weight:900;
     padding:1px 7px;border-radius:9px;pointer-events:none;white-space:nowrap;}
   .lbl.seen{background:var(--acc);color:#fff;}
+  .lbl.img{background:#7b64c0;color:#fff;}
   .lbl.sm{font-size:11.5px;font-weight:700;transform:translate(-50%,-50%);}
   #hint{position:fixed;pointer-events:none;background:var(--acc);color:#fff;font-weight:900;font-size:14px;padding:6px 12px;border-radius:12px;white-space:nowrap;transition:opacity .4s;
     left:calc((100vw - var(--cw) - 24px)/2);bottom:86px;transform:translateX(-50%);max-width:calc(100vw - var(--cw) - 48px);white-space:normal;text-align:center;}
@@ -67,11 +68,13 @@
     </div>
   </div>
   <div class="sec">
-    <h3>見せるもの</h3>
-    <div class="seg" style="flex-direction:column">
-      <button id="tZone" class="on">鏡にうつって見える範囲</button>
-      <button id="tRay">うつるまち針の光の道すじ</button>
+    <h3>ヒント（押すたびに1つずつ増える）</h3>
+    <div class="seg" style="flex-direction:column" id="hintList">
+      <button data-h="1">① まち針の像</button>
+      <button data-h="2">② 像と P を結ぶ</button>
+      <button data-h="3">③ 光の道すじ・見える範囲</button>
     </div>
+    <button class="btn" id="hNext" style="width:100%;margin-top:6px"></button>
   </div>
   <div class="sec">
     <h3>鏡を動かす</h3>
@@ -89,7 +92,7 @@
 </div>
 
 <div class="panel" id="infobar"></div>
-<div id="hint">まち針をタップしよう</div>
+<div id="hint" style="opacity:0"></div>
 <div id="labels"></div>
 
 <script src="three.min.js"></script>
@@ -106,7 +109,7 @@ const SCREEN = { x:4.2, z1:9, z2:12, h:3.2, t:.32 };      // ついたて（図6
 const MIR0 = [ { x1:4, x2:6, z:5, name:'鏡1' }, { x1:6, x2:9, z:5, name:'鏡2' } ];
 const P0 = [0, 10];
 
-const S = { P:[...P0], mirrors: MIR0.map(m=>({...m})), sel:0, zone:true, ray:false, tapped:new Set(), view:'naname' };
+const S = { P:[...P0], mirrors: MIR0.map(m=>({...m})), sel:0, hint:0, view:'naname' };
 
 const $ = id => document.getElementById(id);
 const V3 = (x,y,z) => new THREE.Vector3(x,y,z);
@@ -267,7 +270,7 @@ function clipRect(poly){   // 板の四角で切る（Sutherland–Hodgman）
 function updateZones(){
   S.mirrors.forEach((m,i)=>{
     const mesh = zoneMeshes[i];
-    if(!S.zone || S.view==='eye' || S.P[1] <= m.z){ mesh.visible=false; return; }
+    if(S.hint<3 || S.view==='eye' || S.P[1] <= m.z){ mesh.visible=false; return; }
     const Pz = 2*m.z - S.P[1], Pp=[S.P[0],Pz], K=80;
     const a=[m.x1,m.z], b=[m.x2,m.z];
     const fa=[a[0]+(a[0]-Pp[0])*K, a[1]+(a[1]-Pp[1])*K], fb=[b[0]+(b[0]-Pp[0])*K, b[1]+(b[1]-Pp[1])*K];
@@ -281,16 +284,31 @@ function updateZones(){
 const rayMat = new THREE.MeshBasicMaterial({ color:0xf07a1f });
 const UNIT = new THREE.CylinderGeometry(1,1,1,10,1,true);
 const rayPool=[]; let rayN=0;
-function seg(p1,p2,r=.05){
-  let m=rayPool[rayN]; if(!m){ m=new THREE.Mesh(UNIT,rayMat); scene.add(m); rayPool.push(m); } rayN++;
+const imgMat = new THREE.MeshBasicMaterial({ color:0x9b86d6 });
+const ghostMat = new THREE.MeshBasicMaterial({ color:0x9b86d6, transparent:true, opacity:.55 });
+const BALL = new THREE.SphereGeometry(.2,16,12), ballPool=[]; let ballN=0;
+function ball(p){ let m=ballPool[ballN]; if(!m){ m=new THREE.Mesh(BALL,ghostMat); scene.add(m); ballPool.push(m); } ballN++; m.visible=true; m.position.copy(p); }
+function seg(p1,p2,r=.05,mat=rayMat){
+  let m=rayPool[rayN]; if(!m){ m=new THREE.Mesh(UNIT,rayMat); scene.add(m); rayPool.push(m); } rayN++; m.material=mat;
   const d=new THREE.Vector3().subVectors(p2,p1), L=d.length(); m.visible=L>1e-4; if(!m.visible) return;
   m.position.copy(p1).addScaledVector(d,.5); m.quaternion.setFromUnitVectors(V3(0,1,0), d.normalize()); m.scale.set(r,L,r);
 }
-function dashed(p1,p2){ const L=p1.distanceTo(p2), d=new THREE.Vector3().subVectors(p2,p1).normalize();
-  for(let t=0;t<L;t+=.55) seg(p1.clone().addScaledVector(d,t), p1.clone().addScaledVector(d,Math.min(L,t+.3)), .035); }
+function dashed(p1,p2,mat=rayMat){ const L=p1.distanceTo(p2), d=new THREE.Vector3().subVectors(p2,p1).normalize();
+  for(let t=0;t<L;t+=.55) seg(p1.clone().addScaledVector(d,t), p1.clone().addScaledVector(d,Math.min(L,t+.3)), .035, mat); }
+// 鏡の面（z の値）ごとに、その前にあるまち針の像
+function pinImages(){
+  const out=[], zs=[...new Set(S.mirrors.map(m=>m.z))];
+  for(const z of zs) for(const [n,x,pz] of PINS) if(pz>z) out.push({ n, x, pz, iz:2*z-pz, mz:z });
+  return out;
+}
 function updateRays(){
-  rayN=0;
-  const show = new Set(S.view==='eye' ? [] : S.tapped); if(S.ray && S.view!=='eye') PINS.forEach(p=>{ if(seenPin(p[0]) && !seenPin(p[0]).blocked) show.add(p[0]); });
+  rayN=0; ballN=0;
+  if(S.view!=='eye' && S.hint>=1) for(const im of pinImages()){          // ヒント① 像　ヒント② 像とPを結ぶ
+    const I=V3(im.x,PIN_H,im.iz); ball(I); dashed(V3(im.x,.05,im.pz), V3(im.x,.05,im.iz), imgMat);
+    if(S.hint>=2) dashed(I, V3(S.P[0],PIN_H,S.P[1]), imgMat);
+  }
+  for(let i=ballN;i<ballPool.length;i++) ballPool[i].visible=false;
+  const show = new Set(); if(S.hint>=3 && S.view!=='eye') PINS.forEach(p=>{ if(seenPin(p[0]) && !seenPin(p[0]).blocked) show.add(p[0]); });
   for(const name of show){
     const r = seenPin(name); if(!r || r.blocked) continue;
     const pin=PINS.find(p=>p[0]===name), Q=V3(pin[1],PIN_H,pin[2]), H=V3(r.H[0],PIN_H,r.H[1]), E=V3(S.P[0],PIN_H,S.P[1]);
@@ -316,9 +334,12 @@ function placeLabels(){
   $('hint').style.bottom=($('infobar').offsetHeight+24)+'px';   // 説明の文のすぐ上
   const eyeView = S.view==='eye';
   for(const [n,x,z] of PINS){
-    place(n, x, PIN_H+.25, z); const r=seenPin(n); LB[n].classList.toggle('seen', !!(r && !r.blocked));
+    place(n, x, PIN_H+.25, z); const r=seenPin(n); LB[n].classList.toggle('seen', S.hint>=3 && !!(r && !r.blocked));
     if(eyeView && blocked(S.P,[x,z])) LB[n].style.display='none';             // ついたてにかくれて直接は見えない
-    if(eyeView && r && !r.blocked){ place('img'+n, x, PIN_H+.25, 2*S.mirrors[r.i].z - z); } else LB['img'+n].style.display='none';
+    const L=LB['img'+n];
+    if(eyeView && S.hint>=3 && r && !r.blocked){ L.className='lbl seen'; place('img'+n, x, PIN_H+.25, 2*S.mirrors[r.i].z - z); }
+    else if(!eyeView && S.hint>=1){ const im=pinImages().find(q=>q.n===n); if(im){ L.className='lbl img'; place('img'+n, x, PIN_H+.25, im.iz); } else L.style.display='none'; }
+    else L.style.display='none';
   }
   if(eyeView) LB.P.style.display='none'; else place('P', S.P[0], PIN_H+.3, S.P[1]);
   S.mirrors.forEach((m,i)=>place('m'+i, (m.x1+m.x2)/2, MIR_H+.45, m.z-.1));
@@ -420,7 +441,6 @@ addEventListener('pointermove',e=>{
 });
 function endP(e){
   touches.delete(e.pointerId); pinch=0;
-  if(drag && drag.type==='rot' && drag.pin){ const n=drag.pin; if(S.tapped.has(n)) S.tapped.delete(n); else S.tapped.add(n); S.last=n; refresh(); $('hint').style.opacity=0; }
   drag=null;
 }
 addEventListener('pointerup',endP); addEventListener('pointercancel',endP);
@@ -428,8 +448,10 @@ $('gl').addEventListener('wheel',e=>{ e.preventDefault(); if(cam.mode==='eye') r
 
 /* ---------- ボタン ---------- */
 document.querySelectorAll('#segView button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
-$('tZone').onclick=()=>{ S.zone=!S.zone; $('tZone').classList.toggle('on',S.zone); refresh(); };
-$('tRay').onclick=()=>{ S.ray=!S.ray; $('tRay').classList.toggle('on',S.ray); refresh(); };
+document.querySelectorAll('#hintList button').forEach(b=>b.onclick=()=>{ const h=+b.dataset.h; S.hint = S.hint===h ? h-1 : h; refresh(); });
+$('hNext').onclick=()=>{ S.hint = S.hint<3 ? S.hint+1 : 0; refresh(); };
+function syncHints(){ document.querySelectorAll('#hintList button').forEach(b=>b.classList.toggle('on', +b.dataset.h<=S.hint));
+  $('hNext').textContent = S.hint<3 ? `ヒント${'①②③'[S.hint]}を出す` : 'ヒントをぜんぶかくす'; }
 document.querySelectorAll('#segMir button').forEach(b=>b.onclick=()=>{ S.sel=+b.dataset.m; document.querySelectorAll('#segMir button').forEach(x=>x.classList.toggle('on',x===b)); });
 document.querySelectorAll('.pad button[data-d]').forEach(b=>b.onclick=()=>moveMirror(+b.dataset.d));
 $('btnBack').onclick=()=>{ S.mirrors=MIR0.map(m=>({...m})); refresh(); };
@@ -451,21 +473,20 @@ function movedText(){
 /* ---------- 文 ---------- */
 function info(){
   let html='';
-  const last=S.last && S.tapped.has(S.last) ? S.last : null;
-  if(last){
-    const r=seenPin(last);
-    if(r && !r.blocked) html=`<b>${last}</b> から出た光は、${S.mirrors[r.i].name}ではね返って、P に届く。だから ${S.mirrors[r.i].name} にうつって見える。`;
-    else if(r && r.blocked) html=`<b>${last}</b> から出た光は、${S.mirrors[r.i].name}ではね返るけれど、ついたてにさえぎられて P に届かない。`;
-    else html=`<b>${last}</b> から出た光は、鏡ではね返っても P に届かない。`;
+  if(S.view!=='eye' && S.hint>=1){
+    if(S.hint===1) html='鏡の面について、まち針と対称な位置に<b>像</b>をかいた（紫）。';
+    else if(S.hint===2) html='像と P を結んだ（紫の点線）。この線が<b>鏡を通り</b>、ついたてにさえぎられなければ、そのまち針は P から鏡にうつって見える。';
+    else { const seen=PINS.map(p=>p[0]).filter(n=>{ const r=seenPin(n); return r&&!r.blocked; }), blk=PINS.map(p=>p[0]).filter(n=>{ const r=seenPin(n); return r&&r.blocked; });
+      html=`P から鏡にうつって見えるのは <b>${seen.join('・')||'なし'}</b>。色のついた範囲が、見える範囲。`+(blk.length?`（${blk.join('・')} は、ついたてにさえぎられて見えない）`:''); }
   } else if(S.view==='eye') html='P の目の高さから見ています。鏡の中に、どのまち針がうつっているかな？ ドラッグで見回せます。';
-  else if(S.view==='ue') html='真上から見ると、プリントの図6と同じ。色のついた範囲にあるまち針が、P から鏡にうつって見えます。P はつかんで動かせます。';
+  else if(S.view==='ue') html='真上から見ると、プリントの図6と同じ。P から鏡を見たとき、うつって見えるまち針はどれかな？ P はつかんで動かせます。';
   else if(S.view==='free') html='ドラッグで回して見ています。「斜め」「真上」「Pの目」のボタンで、決まった見方にもどれます。';
-  else html='まち針をタップすると、光の道すじが出ます。「真上」「Pの目」で、見え方を確かめよう。';
+  else html='P から鏡を見たとき、鏡にうつって見えるまち針はどれかな？ 鏡を動かすと、見えるまち針は変わるかな？ 「Pの目」で、見え方を確かめよう。';
   $('infobar').innerHTML=html;
   $('moved').innerHTML=movedText();
 }
 
-function refresh(){ syncAll(); updateZones(); updateRays(); info(); }
+function refresh(){ syncAll(); syncHints(); updateZones(); updateRays(); info(); }
 
 /* ---------- 毎フレーム ---------- */
 let last=performance.now();

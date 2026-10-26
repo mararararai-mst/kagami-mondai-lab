@@ -54,7 +54,8 @@
   .main{display:grid; grid-template-columns:minmax(0,1fr) 270px; gap:12px; align-items:start;}
   @media(max-width:820px){ .main{grid-template-columns:1fr;} }
   .figCard{padding:8px;}
-  #fig{display:block; width:100%; height:auto; touch-action:none; background:#fff; border-radius:14px; user-select:none;}
+  @media(min-width:821px){ .figCard{position:sticky; top:12px;} }   /* 右の操作が長くても、図は見えたまま */
+  #fig{display:block; width:100%; height:auto; max-height:calc(100vh - 120px); touch-action:none; background:#fff; border-radius:14px; user-select:none;}
   #fig .drag{cursor:grab;}
   .side{display:flex; flex-direction:column; gap:10px;}
   .side h3{font-size:11.5px; font-weight:900; color:var(--ink-soft); margin:0 0 6px;}
@@ -62,6 +63,8 @@
   .tog button{font-family:inherit; font-weight:900; font-size:14.7px; text-align:left; cursor:pointer; border:4px solid transparent; border-radius:14px; padding:8px 12px; background:#efe7da; color:var(--ink); transition:transform .08s;}
   .tog button:active{transform:translateY(4px);}
   .tog button.on{background:#fff; border-color:var(--on-bd);}
+  .tog button .no{display:inline-block; min-width:1.3em; font-weight:900; color:var(--btn);}
+  .tog button.on .no{color:var(--on-bd);}
   .tog button .dot{display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:8px; vertical-align:-1px;}
   #msg{font-size:14.7px; line-height:1.7; min-height:3.4em; text-wrap:pretty;}
   #msg b{font-weight:900;}
@@ -103,17 +106,15 @@
       </div>
       <div class="side">
         <div class="card" id="cardShow">
-          <h3>見せるもの</h3>
-          <div class="tog">
-            <button id="tZone" class="on"><span class="dot" style="background:rgba(240,122,31,.45)"></span>鏡にうつって見える範囲</button>
-            <button id="tImg"><span class="dot" style="background:#c9b8f0"></span>像（鏡の向こう）</button>
-            <button id="tAng"><span class="dot" style="background:#7b4fc9"></span>入射角と反射角</button>
-          </div>
+          <h3>ヒント（押すたびに1つずつ増える）</h3>
+          <div class="tog" id="hintList"></div>
+          <button class="btn full" id="hNext" style="margin-top:8px"></button>
+          <div class="tog" id="angWrap" style="margin-top:8px"><button id="tAng"><span class="dot" style="background:#7b4fc9"></span>入射角と反射角</button></div>
         </div>
         <div class="card" id="extra" style="display:none"></div>
         <div class="card">
           <div id="msg"></div>
-          <div class="hintline" id="hintline">目も物も、つかんで動かせます。<br>物をタップすると、光の道すじが出ます。</div>
+          <div class="hintline" id="hintline"></div>
         </div>
         <button class="btn go full" id="btnReset">はじめの位置にもどす</button>
       </div>
@@ -132,20 +133,20 @@ const PROBLEMS = [
     mirrors:[{ a:[3,2], b:[6,2], label:'鏡', labelAt:[1.6,1.55] }],
     eye:{ at:[4,3], label:'A' },
     objs:[ {id:'ア', at:[1,3]}, {id:'イ', at:[5,4]}, {id:'ウ', at:[7,3]}, {id:'エ', at:[8,2]}, {id:'オ', at:[11,4]} ],
-    objWord:'棒' },
+    objWord:'棒', ask:'A から鏡を見たとき、鏡にうつって<b>見えない棒</b>はどれかな？' },
   { id:'iro', type:'A', title:'色鉛筆　どの色が見える？', src:'鏡のしくみ、反射の法則 p.5',
     cols:9, rows:17,      // 2026-10-26 400dpiで数え直し：横9マス、Oは左はしから1マス目、色鉛筆は右はしの線の上
     mirrors:[{ a:[0,9], b:[6,9], label:'鏡の面', labelAt:[0.2,8.45] }],
     eye:{ at:[1,17], label:'O' },
     objs:[ {id:'赤', at:[9,11], color:'#d0304a'}, {id:'青', at:[9,13], color:'#2f6fc0'},
            {id:'黄', at:[9,15], color:'#e8c020'}, {id:'黒', at:[9,17], color:'#2a2a2a'} ],
-    objWord:'色鉛筆' },
+    objWord:'色鉛筆', ask:'O から鏡を見たとき、鏡にうつって<b>見える色鉛筆</b>はどれかな？' },
   { id:'zou', type:'A', title:'Bの像と、光の道すじ', src:'鏡のしくみ、反射の法則 p.1',
     cols:16, rows:8,
     mirrors:[{ a:[2,4], b:[14,4], label:'鏡', labelAt:[14.3,3.6] }],
     eye:{ at:[3,7], label:'A' },
     objs:[ {id:'B', at:[13,7]} ],
-    objWord:'点', startTap:['B'] },
+    objWord:'点', ask:'B から出た光が、鏡ではね返って A に届くまでの<b>道すじ</b>は？' },
   { id:'fukui', type:'A', title:'まち針と2枚の鏡（福井）', src:'鏡のしくみ、反射の法則 p.3', is3d:true, href:'kagami3d.html?p=fukui' },
 
   /* 型B：光源から出た光をたどる（front＝鏡の表がわにある点。うらに当たった光はそこで止まる） */
@@ -242,9 +243,13 @@ function drawBoard(svg,P,st,opt){
   for(let i=0;i<=P.cols;i++) el('line',{x1:i*C,y1:0,x2:i*C,y2:H,stroke:'var(--grid)','stroke-width':.6},g);
   for(let j=0;j<=P.rows;j++) el('line',{x1:0,y1:j*C,x2:W,y2:j*C,stroke:'var(--grid)','stroke-width':.6},g);
 
-  const E=st.eye;
-  // 見える範囲（目の像から鏡の両はしを通る2本の線の間）
-  if(st.zone){
+  const E=st.eye, lv=st.hint||0;
+  const objs=P.objs.map((o,i)=>({...o, at:st.objs[i]}));
+  const seenOf=o=>P.mirrors.some(m=>seenVia(E,o.at,m));
+  const front=(o,m)=>side(o.at,m)!==0 && side(o.at,m)===side(E,m);     // 目と同じがわ（鏡の表）にある物だけ像をかく
+  const onLine=(o,m)=>side(o.at,m)===0;                                // 鏡の面をのばした線の上の物は、像が自分と重なる
+  // ヒント③ 見える範囲（目の像から鏡の両はしを通る2本の線の間）
+  if(lv>=3){
     for(const m of P.mirrors){
       if(side(E,m)===0) continue;
       const E2=reflect(E,m), K=60;
@@ -265,45 +270,41 @@ function drawBoard(svg,P,st,opt){
     if(m.label) el('text',{x:X(m.labelAt),y:Y(m.labelAt),'font-size':4.6,'font-weight':900,fill:'var(--ink-soft)'},svg).textContent=m.label;
   }
 
-  const objs=P.objs.map((o,i)=>({...o, at:st.objs[i]}));
-  // 光の道すじ（タップした物）
-  const pathG=el('g',{},svg);
-  for(const o of objs){
-    if(!st.tapped.has(o.id)) continue;
-    for(const m of P.mirrors){
-      const H=seenVia(E,o.at,m);
+  // ヒント① 像（鏡について対称な点）　ヒント② 像と目を結ぶ線
+  const IMG='#9b86d6';
+  if(lv>=1) for(const m of P.mirrors) for(const o of objs){
+    if(!front(o,m)) continue;
+    const Q2=reflect(o.at,m);
+    el('line',{x1:X(o.at),y1:Y(o.at),x2:X(Q2),y2:Y(Q2),stroke:IMG,'stroke-width':.6,'stroke-dasharray':'1.2 1.2',opacity:.75},svg);
+    if(lv>=2) el('line',{x1:X(Q2),y1:Y(Q2),x2:X(E),y2:Y(E),stroke:IMG,'stroke-width':.9,'stroke-dasharray':'2.6 1.4'},svg);
+    el('circle',{cx:X(Q2),cy:Y(Q2),r:2.1,fill:'#fff',stroke:IMG,'stroke-width':.9,'stroke-dasharray':'1.4 1'},svg);
+    el('text',{x:X(Q2)+2.8,y:Y(Q2)-2.4,'font-size':3.8,'font-weight':900,fill:'#7b64c0'},svg).textContent=o.id+'の像';
+  }
+  if(lv>=2) for(const m of P.mirrors) for(const o of objs) if(onLine(o,m) && side(E,m)!==0)
+    el('line',{x1:X(o.at),y1:Y(o.at),x2:X(E),y2:Y(E),stroke:IMG,'stroke-width':.9,'stroke-dasharray':'2.6 1.4'},svg);
+
+  // ヒント③ 光の道すじ（鏡にうつって見える物すべて）
+  if(lv>=3){
+    const pathG=el('g',{},svg);
+    for(const o of objs) for(const m of P.mirrors){
+      const H=seenVia(E,o.at,m); if(!H) continue;
       const Q2=reflect(o.at,m);
-      if(st.img || H) {
-        // 像へのばした線（鏡の向こう）
-        if(H) el('line',{x1:X(H),y1:Y(H),x2:X(Q2),y2:Y(Q2),stroke:'var(--ray)','stroke-width':1,'stroke-dasharray':'2.2 1.6',opacity:.85},pathG);
-      }
-      if(H){
-        el('line',{x1:X(o.at),y1:Y(o.at),x2:X(H),y2:Y(H),stroke:'var(--ray)','stroke-width':1.6,'marker-end':`url(#arw-${opt.uid})`},pathG);
-        const toE=sub(E,H), lE=Math.hypot(...toE), Eend=addv(H,mul(toE,Math.max(0,(lE-0.42)/lE)));   // 目にかからないよう少し手前で止める
-        el('line',{x1:X(H),y1:Y(H),x2:X(Eend),y2:Y(Eend),stroke:'var(--ray)','stroke-width':1.6,'marker-end':`url(#arw-${opt.uid})`},pathG);
-        el('circle',{cx:X(H),cy:Y(H),r:1.1,fill:'var(--ink)'},pathG);
-        if(st.ang && o.id===[...st.tapped].pop()) drawAngles(pathG,o.at,H,E,m,X,Y);
-      }
+      el('line',{x1:X(H),y1:Y(H),x2:X(Q2),y2:Y(Q2),stroke:'var(--ray)','stroke-width':1,'stroke-dasharray':'2.2 1.6',opacity:.85},pathG);   // 像へのばした線（鏡の向こう）
+      el('line',{x1:X(o.at),y1:Y(o.at),x2:X(H),y2:Y(H),stroke:'var(--ray)','stroke-width':1.6,'marker-end':`url(#arw-${opt.uid})`},pathG);
+      const toE=sub(E,H), lE=Math.hypot(...toE), Eend=addv(H,mul(toE,Math.max(0,(lE-0.42)/lE)));   // 目にかからないよう少し手前で止める
+      el('line',{x1:X(H),y1:Y(H),x2:X(Eend),y2:Y(Eend),stroke:'var(--ray)','stroke-width':1.6,'marker-end':`url(#arw-${opt.uid})`},pathG);
+      el('circle',{cx:X(H),cy:Y(H),r:1.1,fill:'var(--ink)'},pathG);
+      if(st.ang) drawAngles(pathG,o.at,H,E,m,X,Y);
     }
   }
 
-  // 像（鏡の向こうの、対称な位置）
-  if(st.img){
-    for(const m of P.mirrors) for(const o of objs){
-      if(side(o.at,m)===0) continue;
-      const Q2=reflect(o.at,m);
-      el('circle',{cx:X(Q2),cy:Y(Q2),r:2.1,fill:'#fff',stroke:'#9b86d6','stroke-width':.9,'stroke-dasharray':'1.4 1'},svg);
-      el('text',{x:X(Q2)+2.8,y:Y(Q2)-2.4,'font-size':3.8,'font-weight':900,fill:'#7b64c0'},svg).textContent=o.id+'の像';
-    }
-  }
-
-  // 物
+  // 物（見える・見えないの印は、ヒント③まで出さない）
   for(const [i,o] of objs.entries()){
-    const seen=P.mirrors.some(m=>seenVia(E,o.at,m));
+    const seen=lv>=3 && seenOf(o);
     const gg=el('g',{class:opt.interactive?'drag':'', 'data-obj':i},svg);
     if(opt.interactive) el('circle',{cx:X(o.at),cy:Y(o.at),r:5,fill:'transparent'},gg);   // さわりやすく
     if(seen) el('circle',{cx:X(o.at),cy:Y(o.at),r:3.4,fill:'none',stroke:'var(--ray)','stroke-width':1.4},gg);
-    el('circle',{cx:X(o.at),cy:Y(o.at),r:2.1,fill:o.color||(seen?'#4a3a2a':'var(--off)')},gg);
+    el('circle',{cx:X(o.at),cy:Y(o.at),r:2.1,fill:o.color||(lv>=3&&!seen?'var(--off)':'#4a3a2a')},gg);
     const lx=X(o.at)+(o.at[0]>=P.cols-.5?-3.6:3.2), anchor=o.at[0]>=P.cols-.5?'end':'start';
     el('text',{x:lx,y:Y(o.at)-2.6,'font-size':4.8,'font-weight':900,fill:'var(--ink)','text-anchor':anchor},gg).textContent=o.id;
   }
@@ -318,28 +319,28 @@ function drawBoard(svg,P,st,opt){
 // 目の形（アーモンド形）
 function eyePath(x,y){ const w=3.6,h=2.3; return `M${x-w},${y} Q${x},${y-h*1.6} ${x+w},${y} Q${x},${y+h*1.6} ${x-w},${y} Z`; }
 // 法線と、入射角・反射角
+function normalAt(g,H,n,X,Y){ const N2=addv(H,mul(n,2.2)), N1=addv(H,mul(n,-.6));
+  el('line',{x1:X(N1),y1:Y(N1),x2:X(N2),y2:Y(N2),stroke:'var(--ink-soft)','stroke-width':.6,'stroke-dasharray':'1.2 1'},g); }
+function angArc(g,H,n,P,col,X,Y){
+  const v=sub(P,H), lv=Math.hypot(...v); if(lv<1e-9) return; const u=mul(v,1/lv), r=0.9;
+  const p1=addv(H,mul(n,r)), p2=addv(H,mul(u,r)), sweep=cross(n,u)>0?1:0;
+  el('path',{d:`M${X(p1)},${Y(p1)} A${r*C},${r*C} 0 0 ${sweep} ${X(p2)},${Y(p2)}`,fill:'none',stroke:col,'stroke-width':1.2},g);
+  const ang=Math.round(Math.acos(Math.max(-1,Math.min(1,dot(n,u))))*180/Math.PI);
+  const bis=addv(n,u), lb=Math.hypot(...bis)||1, mid=addv(H,mul(bis,1.55/lb));
+  el('text',{x:X(mid),y:Y(mid),'font-size':3.4,'font-weight':900,fill:col,'text-anchor':'middle'},g).textContent=ang+'°';
+}
 function drawAngles(g,Q,H,E,m,X,Y){
   const d=sub(m.b,m.a), L=Math.hypot(...d), n0=[-d[1]/L,d[0]/L], s=side(E,m)||1, n=mul(n0,s);
-  const N2=addv(H,mul(n,2.2));
-  el('line',{x1:X(H),y1:Y(H),x2:X(N2),y2:Y(N2),stroke:'var(--ink-soft)','stroke-width':.6,'stroke-dasharray':'1.2 1'},g);
-  const arc=(P,col)=>{ const v=sub(P,H), lv=Math.hypot(...v), u=mul(v,1/lv), r=0.9;
-    const a1=Math.atan2(n[1],n[0]), a2=Math.atan2(u[1],u[0]);
-    const p1=addv(H,mul(n,r)), p2=addv(H,mul(u,r)), sweep=cross(n,u)>0?1:0;
-    el('path',{d:`M${X(p1)},${Y(p1)} A${r*C},${r*C} 0 0 ${sweep} ${X(p2)},${Y(p2)}`,fill:'none',stroke:col,'stroke-width':1.2},g);
-    const ang=Math.round(Math.acos(Math.max(-1,Math.min(1,dot(n,u))))*180/Math.PI);
-    const bis=addv(n,u), lb=Math.hypot(...bis)||1, mid=addv(H,mul(bis,1.55/lb));
-    el('text',{x:X(mid),y:Y(mid),'font-size':3.4,'font-weight':900,fill:col,'text-anchor':'middle'},g).textContent=ang+'°';
-  };
-  arc(Q,'#7b4fc9'); arc(E,'#2f7fd0');
+  normalAt(g,H,n,X,Y); angArc(g,H,n,Q,'#7b4fc9',X,Y); angArc(g,H,n,E,'#2f7fd0',X,Y);
 }
 
 /* =========================================================
    問題をえらぶ画面
    ========================================================= */
 function initState(P){
-  if(P.kind==='ray') return { src:[...P.source.at], dir:[...P.source.dir], ang:false };
+  if(P.kind==='ray') return { src:[...P.source.at], dir:[...P.source.dir], ang:false, hint:0 };
   if(P.kind==='side') return sideState('kagawa');
-  return { eye:[...P.eye.at], objs:P.objs.map(o=>[...o.at]), tapped:new Set(P.startTap||[]), zone:true, img:false, ang:false }; }
+  return { eye:[...P.eye.at], objs:P.objs.map(o=>[...o.at]), ang:false, hint:0 }; }
 /* 一覧はプリントの問題の順（2026-10-27 本人「プリントの問題の順に並べ直して」）。
    1つの画面で何問も扱うもの（全身鏡・文字の向き）は、問題ごとにカードを分けて、その問題の設定で開く */
 const HOME=[
@@ -372,7 +373,7 @@ function buildHome(){
       const P=it.id ? PROBLEMS.find(q=>q.id===it.id) : null;
       if(P && P.kind){ const s=document.createElementNS(NS,'svg'); s.setAttribute('preserveAspectRatio','xMidYMid meet'); th.appendChild(s);
         const st=it.preset ? sideState(it.preset) : initState(P); KIND[P.kind].draw(s,P,st,{uid:'th-'+it.id+(it.preset||'')+k,interactive:false}); }
-      else if(P){ const s=document.createElementNS(NS,'svg'); s.setAttribute('preserveAspectRatio','xMidYMid meet'); th.appendChild(s); drawBoard(s,P,{...initState(P),zone:false,tapped:new Set()},{uid:'th-'+P.id,interactive:false}); }
+      else if(P){ const s=document.createElementNS(NS,'svg'); s.setAttribute('preserveAspectRatio','xMidYMid meet'); th.appendChild(s); drawBoard(s,P,initState(P),{uid:'th-'+P.id,interactive:false}); }
       else if(it.thumb==='fukui') th.innerHTML=fukuiThumb();
       else th.innerHTML=mojiThumb(it.thumb);
       const tl=document.createElement('b'); tl.innerHTML=`<span class="pg">${it.p}</span>`+it.title+(it.d3?'<span class="tag3d">3D</span>':''); b.appendChild(tl);
@@ -424,44 +425,67 @@ function openLab(id,opt={}){
   document.getElementById('labTitle').textContent=opt.title||CUR.title;
   document.getElementById('labSrc').textContent='プリント：'+(opt.src||CUR.src);
   const k=CUR.kind;
-  document.getElementById('cardShow').style.display = k==='side' ? 'none' : '';
-  document.getElementById('tZone').style.display = k ? 'none' : '';
-  document.getElementById('tImg').style.display = k==='ray' ? 'none' : '';
   document.getElementById('extra').style.display = k==='side' ? '' : 'none';
-  document.getElementById('hintline').innerHTML = k ? CUR.hint : '目も物も、つかんで動かせます。<br>物をタップすると、光の道すじが出ます。';
+  document.getElementById('extra').style.order = k==='side' ? -1 : 0;     // 全身鏡は「プリントの問題」を先に
+  document.getElementById('hintline').innerHTML = k ? CUR.hint : '目も物も、つかんで動かせます。';
   if(k==='side') buildSideControls();
-  syncTog(); render();
+  render();
   history.replaceState(null,'','#'+id+(opt.preset?':'+opt.preset:''));
   scrollTo(0,0);
 }
 function goHome(){ document.getElementById('lab').style.display='none'; document.getElementById('home').style.display='block'; history.replaceState(null,'',location.pathname); }
+/* ---------- ヒントの段階（はじめは答えを出さない。押すたびに手がかりが1つずつ増える） ---------- */
+const MARU='①②③④⑤⑥⑦⑧⑨⑩⑪⑫';
+function hintSteps(){
+  const k=CUR.kind;
+  if(!k) return ['像をかく', `像と ${CUR.eye.label} を結ぶ`, '光の道すじ・見える範囲'];
+  if(k==='via2') return ['Q の像（手鏡）', 'その像（洗面台の鏡）', '像と P を結ぶ', '光の道すじ'];
+  if(k==='side') return ['像をかく', '目と、像の頭・足先を結ぶ', '目と、鏡のはしを結ぶ', '光の道すじ', '見える範囲・必要な長さ'];
+  if(k==='ray'){ const out=[]; for(const h of rayRefl()) out.push(h.m.label+'：法線と入射角', h.m.label+'：はね返った光'); return out; }
+  return [];
+}
+function rayRefl(){ return trace(CUR,ST.src,ST.dir).hits.filter(h=>!h.wall&&!h.back); }
+function renderHints(){
+  const steps=hintSteps(), n=steps.length;
+  if(ST.hint>n) ST.hint=n;
+  const box=document.getElementById('hintList');
+  box.innerHTML=steps.map((t,i)=>`<button data-h="${i+1}" class="${i<ST.hint?'on':''}"><span class="no">${MARU[i]}</span>${t}</button>`).join('');
+  box.querySelectorAll('[data-h]').forEach(b=>b.onclick=()=>{ const h=+b.dataset.h; ST.hint = ST.hint===h ? h-1 : h; render(); });
+  const nx=document.getElementById('hNext');
+  document.getElementById('cardShow').style.display = n ? '' : 'none';
+  nx.textContent = ST.hint<n ? `ヒント${MARU[ST.hint]}を出す` : 'ヒントをぜんぶかくす';
+  const angOK = (!CUR.kind && ST.hint>=3) || (CUR.kind==='via2' && ST.hint>=4);
+  document.getElementById('angWrap').style.display = angOK ? '' : 'none';
+  document.getElementById('tAng').classList.toggle('on',!!ST.ang);
+}
+document.getElementById('hNext').onclick=()=>{ const n=hintSteps().length; ST.hint = ST.hint<n ? ST.hint+1 : 0; render(); };
+
 function render(){
-  if(CUR.kind){ KIND[CUR.kind].draw(fig,CUR,ST,{uid:'main',interactive:true}); KIND[CUR.kind].msg(); document.getElementById('figHint').textContent=''; return; }
+  if(CUR.kind){ KIND[CUR.kind].draw(fig,CUR,ST,{uid:'main',interactive:true}); renderHints(); KIND[CUR.kind].msg();
+    document.getElementById('figHint').textContent = ST.hint ? '' : 'わからないときは、ヒントを1つずつ出してみよう'; return; }
   drawBoard(fig,CUR,ST,{uid:'main',interactive:true});
+  renderHints();
   // 文
-  const E=ST.eye, P=CUR;
-  const word=P.objWord, last=[...ST.tapped].pop();
+  const E=ST.eye, P=CUR, lv=ST.hint, word=P.objWord, el_=P.eye.label;
   let html='';
   if(P.mirrors.every(m=>side(E,m)===0)) html=`目が鏡の面と同じ線の上にいます。少しずらしてみよう。`;
-  else if(last){
-    const i=P.objs.findIndex(o=>o.id===last), Q=ST.objs[i];
-    const via=P.mirrors.find(m=>seenVia(E,Q,m));
-    html= via ? `<b>${last}</b> から出た光は、鏡ではね返って <b>${P.eye.label}</b> に届く。だから鏡にうつって見える。`
-              : `<b>${last}</b> から出た光は、鏡ではね返っても <b>${P.eye.label}</b> に届かない。`;
-  } else html=`色のついた範囲にある${word}が、${P.eye.label} から鏡にうつって見えます。`;
+  else if(lv===0) html=P.ask;
+  else if(lv===1){ html=`鏡の向こうに、それぞれの<b>像</b>をかいた。像は、鏡について物と対称な位置（鏡から同じ距離）にできる。`;
+    const on=P.objs.filter((o,i)=>P.mirrors.some(m=>side(ST.objs[i],m)===0)).map(o=>o.id);
+    if(on.length) html+=`<br>（${on.join('・')} は鏡の面をのばした線の上にあるので、像は ${on.join('・')} と重なる）`; }
+  else if(lv===2) html=`像と ${el_} を結んだ（紫の点線）。この線が<b>鏡を通っていれば</b>、その${word}から出た光は鏡ではね返って ${el_} に届く。`;
+  else {
+    const seen=P.objs.filter((o,i)=>P.mirrors.some(m=>seenVia(E,ST.objs[i],m))).map(o=>o.id);
+    const unseen=P.objs.map(o=>o.id).filter(id=>!seen.includes(id));
+    if(P.objs.length===1) html = seen.length ? `${P.objs[0].id} から出た光は、鏡の ● ではね返って <b>${el_}</b> に届く。像と ${el_} を結んだ線が鏡と交わる点で、光ははね返る。`
+                                               : `${P.objs[0].id} から出た光は、鏡ではね返っても ${el_} に届かない（像と ${el_} を結んだ線が鏡を通らない）。`;
+    else html = `${el_} から鏡にうつって見えるのは <b>${seen.join('・')||'なし'}</b>。見えないのは <b>${unseen.join('・')||'なし'}</b>。<br>色のついた範囲（見える範囲）にある${word}だけが見える。`;
+  }
   document.getElementById('msg').innerHTML=html;
-  document.getElementById('figHint').textContent = ST.tapped.size ? '' : `${word}をタップしてみよう`;
+  document.getElementById('figHint').textContent = lv ? '' : 'わからないときは、ヒントを1つずつ出してみよう';
 }
-function syncTog(){
-  if(CUR.kind==='side') return;
-  document.getElementById('tZone').classList.toggle('on',ST.zone);
-  document.getElementById('tImg').classList.toggle('on',ST.img);
-  document.getElementById('tAng').classList.toggle('on',ST.ang);
-}
-document.getElementById('tZone').onclick=()=>{ ST.zone=!ST.zone; syncTog(); render(); };
-document.getElementById('tImg').onclick=()=>{ ST.img=!ST.img; syncTog(); render(); };
-document.getElementById('tAng').onclick=()=>{ ST.ang=!ST.ang; if(ST.ang&&ST.tapped&&!ST.tapped.size&&CUR.objs[0]) ST.tapped.add(CUR.objs[0].id); syncTog(); render(); };
-document.getElementById('btnReset').onclick=()=>{ ST=initState(CUR); if(CUR.kind==='side') buildSideControls(); syncTog(); render(); };
+document.getElementById('tAng').onclick=()=>{ ST.ang=!ST.ang; render(); };
+document.getElementById('btnReset').onclick=()=>{ ST = CUR.kind==='side' ? sideState(ST.preset) : initState(CUR); if(CUR.kind==='side') buildSideControls(); render(); };
 document.getElementById('btnHome').onclick=goHome;
 
 /* ---------- つかんで動かす（マスの点にすいつく） ---------- */
@@ -489,11 +513,6 @@ fig.addEventListener('pointermove',e=>{
 });
 function endDrag(){
   if(drag && drag.custom){ drag=null; return; }
-  if(drag && !drag.moved && drag.kind==='obj'){
-    const id=CUR.objs[drag.i].id;
-    if(ST.tapped.has(id)) ST.tapped.delete(id); else ST.tapped.add(id);
-    render();
-  }
   drag=null;
 }
 fig.addEventListener('pointerup',endDrag); fig.addEventListener('pointercancel',endDrag);
@@ -576,13 +595,22 @@ KIND.ray={
       if(w.label) el('text',{x:X(w.labelAt),y:Y(w.labelAt),'font-size':4.4,'font-weight':900,fill:'var(--ink-soft)'},svg).textContent=w.label;
     }
     const tr=trace(P,st.src,st.dir), th=targetsHit(P,tr);
+    const refl=tr.hits.filter(h=>!h.wall&&!h.back), nR=refl.length, lv=Math.min(st.hint||0, 2*nR), done=lv>=2*nR;
+    const nSeg=Math.min(tr.pts.length-1, 1+Math.floor(lv/2));        // 見せる光の線の数（はじめは最初の鏡まで）
     const g=el('g',{},svg);
-    for(let i=0;i<tr.pts.length-1;i++) rayLine(g,tr.pts[i],tr.pts[i+1],opt.uid);
-    tr.hits.forEach((h,i)=>{ if(h.wall||h.back) return; el('circle',{cx:X(h.p),cy:Y(h.p),r:1.1,fill:'var(--ink)'},g);
-      if(st.ang) drawAngles(g,tr.pts[i],h.p,tr.pts[i+2],h.m,X,Y); });
-    // 的（ア〜エ・P）
+    for(let i=0;i<nSeg;i++) rayLine(g,tr.pts[i],tr.pts[i+1],opt.uid);
+    refl.forEach((h,r)=>{
+      if(r>=nSeg) return;
+      el('circle',{cx:X(h.p),cy:Y(h.p),r:1.1,fill:'var(--ink)'},g);
+      if(r<Math.ceil(lv/2)){                                          // 法線と入射角
+        const n=mul(normalOf(h.m), side(tr.pts[r],h.m)||1);
+        normalAt(g,h.p,n,X,Y); angArc(g,h.p,n,tr.pts[r],'#7b4fc9',X,Y);
+        if(r<Math.floor(lv/2)) angArc(g,h.p,n,tr.pts[r+2],'#2f7fd0',X,Y);   // 反射角
+      }
+    });
+    // 的（ア〜エ・P）。光が通ったかの印は、光の道すじをぜんぶ出してから
     for(const t of (P.targets||[])){
-      const on=th.some(x=>x.t===t);
+      const on=done && th.some(x=>x.t===t);
       if(on) el('circle',{cx:X(t.at),cy:Y(t.at),r:3.2,fill:'none',stroke:'var(--ray)','stroke-width':1.4},svg);
       el('circle',{cx:X(t.at),cy:Y(t.at),r:1.5,fill:'#3a3040'},svg);
       const lx=X(t.at)+(t.left?-2.8:2.8);
@@ -602,12 +630,19 @@ KIND.ray={
       el('circle',{cx:X(k),cy:Y(k),r:3.1,fill:'#fff',stroke:'var(--btn)','stroke-width':1.4},kg);
       el('path',{d:`M${X(k)-1.6},${Y(k)-.6} A1.7,1.7 0 1 1 ${X(k)+.4},${Y(k)+1.6}`,fill:'none',stroke:'var(--btn)','stroke-width':.8},kg);
     }
-    KIND.ray._last={tr,th};
+    KIND.ray._last={tr,th,refl,lv,done};
   },
   msg(){
-    const {tr,th}=KIND.ray._last, P=CUR;
-    const route=tr.hits.filter(h=>!h.wall&&!h.back).map(h=>h.m.label);
+    const {tr,th,refl,lv,done}=KIND.ray._last, P=CUR;
+    const route=refl.map(h=>h.m.label);
     let html='';
+    if(!done){                                                         // とちゅう：答えはまだ言わない
+      const r=Math.floor(lv/2), h=refl[r];
+      html = lv%2===0
+        ? `光は <b>${h.m.label}</b> に当たった。ここから、どの向きにはね返るかな？`
+        : `${h.m.label} に<b>法線</b>（点線）をかいた。紫の角が入射角。はね返った光は、<b>反射角が入射角と同じ</b>になる向きに進む。`;
+      document.getElementById('msg').innerHTML=html; return;
+    }
     const goal=th.find(x=>x.t.goal), onA=th.filter(x=>!x.t.goal);
     if(P.id==='nagasaki'){
       const first=onA[0]?onA[0].t.id:null;
@@ -621,6 +656,7 @@ KIND.ray={
       html += wallHit ? (t ? `スクリーンの <b>${t.t.id}</b> に届いた。` : 'スクリーンに届いた（ア〜エの間）。') : 'スクリーンに届かない。';
     } else {
       html = route.length ? route.map(r=>`${r}ではね返り`).join('、')+`、最後は <b>${dirWord(tr.lastDir)}</b> へ進む。` : `光は <b>${dirWord(tr.lastDir)}</b> へ進む。`;
+      const d0=unit(ST.dir); if(route.length===2 && Math.abs(dot(d0,tr.lastDir)+1)<1e-6) html+='<br>はじめの光と<b>平行で、逆向き</b>。直角に合わせた鏡は、光を来た向きに返す。';
     }
     if(tr.end==='back') html+='<br>（鏡のうらに当たった光は、はね返らない）';
     document.getElementById('msg').innerHTML=html;
@@ -670,18 +706,19 @@ KIND.via2={
     const {X,Y}=baseBoard(svg,P,opt);
     for(const m of P.mirrors) drawMirror(svg,m,X,Y);
     const E=st.eye, Q=st.objs[0], r=via2Path(P,E,Q);
-    const g=el('g',{},svg);
-    if(r && st.img){
+    const g=el('g',{},svg), lv=st.hint||0;
+    if(r){
       const dash={stroke:'#9b86d6','stroke-width':.8,'stroke-dasharray':'1.6 1.2'};
-      el('line',{x1:X(Q),y1:Y(Q),x2:X(r.Q1),y2:Y(r.Q1),...dash},g); el('line',{x1:X(r.Q1),y1:Y(r.Q1),x2:X(r.Q2),y2:Y(r.Q2),...dash},g);
-      for(const [p,t] of [[r.Q1,'Qの像（手鏡）'],[r.Q2,'その像（洗面台の鏡）']]){
-        el('circle',{cx:X(p),cy:Y(p),r:2.1,fill:'#fff',stroke:'#9b86d6','stroke-width':.9,'stroke-dasharray':'1.4 1'},g);
-        el('text',{x:X(p),y:Y(p)-3.4,'font-size':3.6,'font-weight':900,fill:'#7b64c0','text-anchor':'middle'},g).textContent=t;
-      }
-      if(r.ok){ el('line',{x1:X(r.H2),y1:Y(r.H2),x2:X(r.Q2),y2:Y(r.Q2),stroke:'var(--ray)','stroke-width':.9,'stroke-dasharray':'2 1.5',opacity:.8},g);
-                el('line',{x1:X(r.H1),y1:Y(r.H1),x2:X(r.Q1),y2:Y(r.Q1),stroke:'var(--ray)','stroke-width':.9,'stroke-dasharray':'2 1.5',opacity:.8},g); }
+      const img=(p,t)=>{ el('circle',{cx:X(p),cy:Y(p),r:2.1,fill:'#fff',stroke:'#9b86d6','stroke-width':.9,'stroke-dasharray':'1.4 1'},g);
+        el('text',{x:X(p),y:Y(p)-3.4,'font-size':3.6,'font-weight':900,fill:'#7b64c0','text-anchor':'middle'},g).textContent=t; };
+      if(lv>=1){ el('line',{x1:X(Q),y1:Y(Q),x2:X(r.Q1),y2:Y(r.Q1),...dash},g); img(r.Q1,'Qの像（手鏡）'); }
+      if(lv>=2){ el('line',{x1:X(r.Q1),y1:Y(r.Q1),x2:X(r.Q2),y2:Y(r.Q2),...dash},g); img(r.Q2,'その像（洗面台の鏡）'); }
+      if(lv>=3){ el('line',{x1:X(E),y1:Y(E),x2:X(r.Q2),y2:Y(r.Q2),stroke:'#9b86d6','stroke-width':.9,'stroke-dasharray':'2.6 1.4'},g);
+                 if(r.H2) el('circle',{cx:X(r.H2),cy:Y(r.H2),r:1.1,fill:'var(--ink)'},g); }
+      if(lv>=4 && r.ok){ el('line',{x1:X(r.H2),y1:Y(r.H2),x2:X(r.Q2),y2:Y(r.Q2),stroke:'var(--ray)','stroke-width':.9,'stroke-dasharray':'2 1.5',opacity:.8},g);
+                         el('line',{x1:X(r.H1),y1:Y(r.H1),x2:X(r.Q1),y2:Y(r.Q1),stroke:'var(--ray)','stroke-width':.9,'stroke-dasharray':'2 1.5',opacity:.8},g); }
     }
-    if(r && r.ok){
+    if(lv>=4 && r && r.ok){
       const Eend=addv(r.H2,mul(sub(E,r.H2),Math.max(0,1-.42/Math.hypot(...sub(E,r.H2)))));
       rayLine(g,Q,r.H1,opt.uid); rayLine(g,r.H1,r.H2,opt.uid); rayLine(g,r.H2,Eend,opt.uid);
       for(const p of [r.H1,r.H2]) el('circle',{cx:X(p),cy:Y(p),r:1.1,fill:'var(--ink)'},g);
@@ -699,10 +736,15 @@ KIND.via2={
     KIND.via2._last=r;
   },
   msg(){
-    const r=KIND.via2._last;
-    document.getElementById('msg').innerHTML = r&&r.ok
-      ? 'Q から出た光は、<b>手鏡 → 洗面台の鏡</b> の順にはね返って、P に届く。だから P から後頭部が見える。'
-      : 'いまの位置では、Q から出た光が2枚の鏡ではね返って P に届く道すじがない（鏡からはみ出す）。';
+    const r=KIND.via2._last, lv=ST.hint;
+    const ng='いまの位置では、Q から出た光が2枚の鏡ではね返って P に届く道すじがない（鏡からはみ出す）。P や Q を動かしてみよう。';
+    document.getElementById('msg').innerHTML =
+        lv===0 ? 'Q（後頭部）から出た光が、<b>手鏡 → 洗面台の鏡</b> の順にはね返って P（目）に届く。その<b>道すじ</b>は？'
+      : !r ? ng
+      : lv===1 ? '手鏡にうつる Q の<b>像</b>をかいた（手鏡について Q と対称な点）。'
+      : lv===2 ? 'その像が、さらに洗面台の鏡にうつった<b>像</b>をかいた。P が洗面台の鏡に見ているのは、この像。'
+      : lv===3 ? (r.H2 ? 'P とその像を結んだ。洗面台の鏡と交わる点 ● で、光がはね返る。そこから手鏡の像（Qの像）に向かって線をのばすと…？' : ng)
+      : r.ok ? 'Q から出た光は、<b>手鏡 → 洗面台の鏡</b> の順にはね返って、P に届く。だから P から後頭部が見える。' : ng;
   },
   down(e){
     const t=e.target.closest('[data-obj],[data-eye]'); if(!t) return;
@@ -726,7 +768,7 @@ const SIDE_PRESET={
   shimane: { name:'島根', H:150, eye:135, dist:150, top:150, bot:80, pts:[], note:'(1) 鏡にうつる自分の姿は？　(2) 鏡に近づくと？' },
   kakunin: { name:'確認テスト', H:160, eye:141, dist:112, top:200, bot:0, pts:[], note:'全身をうつすのに必要な鏡の大きさは？' },
 };
-function sideState(key){ const p=SIDE_PRESET[key]; return { preset:key, H:p.H, eye:p.eye, dist:p.dist, top:p.top, bot:p.bot }; }
+function sideState(key){ const p=SIDE_PRESET[key]; return { preset:key, H:p.H, eye:p.eye, dist:p.dist, top:p.top, bot:p.bot, hint:0 }; }
 function buildSideControls(){
   const box=document.getElementById('extra');
   const pr=Object.entries(SIDE_PRESET).map(([k,p])=>`<button data-pre="${k}" class="${ST.preset===k?'on':''}">${p.name}</button>`).join('');
@@ -734,11 +776,12 @@ function buildSideControls(){
   box.innerHTML=`<h3>プリントの問題</h3><div class="tog pre">${pr}</div>
     <h3 style="margin-top:10px">変えてみる</h3>
     ${sl('H','身長',100,190)}${sl('eye','目の高さ',60,187)}${sl('dist','鏡までの距離',30,250)}${sl('top','鏡の上はし',0,200)}${sl('bot','鏡の下はし',0,200)}`;
-  box.querySelectorAll('[data-pre]').forEach(b=>b.onclick=()=>{ ST=sideState(b.dataset.pre); buildSideControls(); render(); });
+  box.querySelectorAll('[data-pre]').forEach(b=>b.onclick=()=>{ ST=sideState(b.dataset.pre); buildSideControls(); render(); });   // 問題を変えたらヒントもはじめから
   for(const id of ['H','eye','dist','top','bot']){
     const inp=document.getElementById('s_'+id);
-    inp.oninput=()=>{ ST[id]=+inp.value;
-      if(id==='H') ST.eye=Math.min(ST.eye,ST.H-3); if(id==='eye') ST.eye=Math.min(ST.eye,ST.H-3);
+    inp.oninput=()=>{ const prevH=ST.H; ST[id]=+inp.value;
+      if(id==='H') ST.eye+=ST.H-prevH;
+      ST.eye=Math.max(ST.H-25,Math.min(ST.H-5,ST.eye));   // 頭のてっぺんから目まで 5〜25cm（絵がのびすぎない）
       // 鏡の長さが 5cm より短くならないように（上はしと下はしが同じ・逆にならない）
       if(id==='top' && ST.top-ST.bot<5){ ST.top=Math.max(5,ST.top); ST.bot=ST.top-5; }
       if(id==='bot' && ST.top-ST.bot<5){ ST.bot=Math.min(195,ST.bot); ST.top=ST.bot+5; }
@@ -747,14 +790,21 @@ function buildSideControls(){
   syncSliders();
 }
 function syncSliders(){ for(const id of ['H','eye','dist','top','bot']){ const i=document.getElementById('s_'+id); if(!i) continue; i.value=ST[id]; document.getElementById('v_'+id).textContent=ST[id]+' cm'; } }
-// 人の絵（ChatGPT で作った横向きの絵。img/person_side.png は左向き・頭のてっぺん〜くつ先で切りぬき）
-const PERSON_SIDE={ src:'img/person_side.png', aspect:150/760, eyeX:.25 };   // eyeX＝絵の前はしから目までの幅の割合
+// 人の絵（ChatGPT で作った横向きの絵。img/person_side.png は左向き・頭のてっぺん〜くつ先で切りぬき、150×760）
+// 絵の目は上から 80px。目の高さで上下2つに分けてそれぞれのばし、絵の目をスライダーの目の高さにそろえる
+const PERSON_SIDE={ src:'img/person_side.png', w:150, h:760, eyePx:80, eyeX:.28, aspect:150/760 };   // eyeX＝絵の前はしから目までの幅の割合
 const personW=H=>H*PERSON_SIDE.aspect;
 function drawPerson(g,x,H,eye,face,opacity){
-  const w=personW(H), Y=h=>-h;
-  const im=el('image',{href:PERSON_SIDE.src,x:x-w/2,y:Y(H),width:w,height:H,opacity,preserveAspectRatio:'none'},g);
-  if(face>0) im.setAttribute('transform',`translate(${2*x},0) scale(-1,1)`);   // 右向き（鏡の向こうの像）は左右反転
-  if(opacity>=1) el('circle',{cx:x+face*w*PERSON_SIDE.eyeX,cy:Y(eye),r:2.2,fill:'none',stroke:'var(--ray)','stroke-width':1.2},g);   // 目の高さ（スライダーの値）
+  const w=personW(H), Y=h=>-h, S=PERSON_SIDE;
+  const pg=el('g',{opacity},g);
+  if(face>0) pg.setAttribute('transform',`translate(${2*x},0) scale(-1,1)`);   // 右向き（鏡の向こうの像）は左右反転
+  const ov=.6;                                                       // つなぎ目に線が出ないよう、上の部分を少し重ねる
+  for(const [y0,y1,top,bot,ex] of [[S.eyePx,S.h,eye,0,0],[0,S.eyePx,H,eye,ov]]){
+    const vh=(y1-y0)*(1+ex/(top-bot));
+    const sv=el('svg',{x:x-w/2,y:Y(top),width:w,height:top-bot+ex,viewBox:`0 ${y0} ${S.w} ${vh}`,preserveAspectRatio:'none',overflow:'hidden'},pg);
+    el('image',{href:S.src,x:0,y:0,width:S.w,height:S.h},sv);
+  }
+  if(opacity>=1) el('circle',{cx:x+face*w*(.5-S.eyeX),cy:Y(eye),r:2.2,fill:'none',stroke:'var(--ray)','stroke-width':1.2},g);   // 目の高さ（スライダーの値）
 }
 KIND.side={
   draw(svg,P,st,opt){
@@ -770,24 +820,34 @@ KIND.side={
     for(let h=0;h<=200;h+=10) el('line',{x1:-W,y1:Y(h),x2:W,y2:Y(h),stroke:'var(--grid)','stroke-width':h%50?.35:.7},svg);
     el('line',{x1:-W,y1:0,x2:W,y2:0,stroke:'#6e6053','stroke-width':1.6},svg);
     for(let h=0;h<=200;h+=50) el('text',{x:-W+2,y:Y(h)-1.5,'font-size':6,'font-weight':900,fill:'var(--ink-soft)'},svg).textContent=h+'cm';
-    const {H,eye,dist,top,bot}=st, lo=Math.max(0,2*bot-eye), hi=Math.min(H,2*top-eye);
-    // 鏡に見える部分（人と像の上に色）
-    if(hi>lo) for(const x of [dist,-dist]) el('rect',{x:x-15,y:Y(hi),width:30,height:hi-lo,fill:'var(--zone)',stroke:'var(--zone-bd)','stroke-width':.6,'stroke-dasharray':'2 1.5'},svg);
-    drawPerson(svg,-dist,H,eye,1,.45);              // 像（鏡の向こう）
+    const {H,eye,dist,top,bot}=st, lo=Math.max(0,2*bot-eye), hi=Math.min(H,2*top-eye), lv=st.hint||0;
+    // ヒント⑤ 鏡に見える部分（人と像の上に色）
+    if(lv>=5 && hi>lo) for(const x of [dist,-dist]) el('rect',{x:x-15,y:Y(hi),width:30,height:hi-lo,fill:'var(--zone)',stroke:'var(--zone-bd)','stroke-width':.6,'stroke-dasharray':'2 1.5'},svg);
+    if(lv>=1){ drawPerson(svg,-dist,H,eye,1,.45);   // ヒント① 像（鏡の向こう）
+      el('text',{x:-dist,y:Y(H)-4,'font-size':6,'font-weight':900,fill:'#7b64c0','text-anchor':'middle'},svg).textContent='像'; }
     drawPerson(svg,dist,H,eye,-1,1);                // 本人（鏡を向いている）
     if(opt.interactive){ const hit=el('rect',{x:dist-16,y:Y(H),width:32,height:H,fill:'transparent',class:'drag','data-person':1},svg); }
-    el('text',{x:-dist,y:Y(H)-4,'font-size':6,'font-weight':900,fill:'#7b64c0','text-anchor':'middle'},svg).textContent='像';
     // 鏡（壁にとりつけ。表は右）
     el('rect',{x:-3,y:Y(top),width:3,height:top-bot,fill:'var(--mirror-d)'},svg);
     el('line',{x1:0,y1:Y(bot),x2:0,y2:Y(top),stroke:'var(--mirror)','stroke-width':2.2},svg);
     el('text',{x:-4,y:Y(top)-3,'font-size':6,'font-weight':900,fill:'var(--ink-soft)','text-anchor':'middle'},svg).textContent='鏡';
-    // 全身に必要な部分
+    // ヒント⑤ 全身に必要な部分
     const n1=eye/2, n2=(H+eye)/2;
-    el('line',{x1:4,y1:Y(n1),x2:4,y2:Y(n2),stroke:'var(--ray)','stroke-width':3.2,opacity:.85},svg);
-    el('text',{x:7,y:Y((n1+n2)/2),'font-size':6,'font-weight':900,fill:'var(--ray)'},svg).textContent=`全身に必要 ${Math.round(n2-n1)}cm`;
+    if(lv>=5){ el('line',{x1:4,y1:Y(n1),x2:4,y2:Y(n2),stroke:'var(--ray)','stroke-width':3.2,opacity:.85},svg);
+    el('text',{x:7,y:Y((n1+n2)/2),'font-size':6,'font-weight':900,fill:'var(--ray)'},svg).textContent=`全身に必要 ${Math.round(n2-n1)}cm`; }
     // 頭のてっぺん・足先からの光
-    const g=el('g',{},svg), E=[dist-personW(H)*PERSON_SIDE.eyeX,Y(eye)];   // 光は絵の目に届く
-    for(const [h,mh] of [[H,n2],[0,n1]]){
+    const g=el('g',{},svg), E=[dist-personW(H)*(.5-PERSON_SIDE.eyeX),Y(eye)];   // 光は絵の目に届く
+    const IE=[-E[0],0];                                               // 像の目と同じたての線
+    if(lv>=2) for(const h of [H,0]){                                  // ヒント② 目と、像の頭のてっぺん・足先を結ぶ
+      el('line',{x1:E[0],y1:E[1],x2:IE[0],y2:Y(h),stroke:'#9b86d6','stroke-width':.9,'stroke-dasharray':'2.6 1.4'},g);
+      el('circle',{cx:0,cy:Y((h+eye)/2),r:1.6,fill:'#7b64c0'},g);
+    }
+    if(lv>=3) for(const mh of [top,bot]){                             // ヒント③ 目と、鏡の上はし・下はしを結んで、像までのばす
+      const hh=2*mh-eye, t=hh<0 ? eye/(eye-hh) : 1;                // 床より下へは引かない
+      el('line',{x1:E[0],y1:E[1],x2:E[0]+(IE[0]-E[0])*t,y2:Y(eye+(hh-eye)*t),stroke:'#2f7fd0','stroke-width':.9,'stroke-dasharray':'2.6 1.4'},g);
+      if(hh>=0 && hh<=H) el('circle',{cx:IE[0],cy:Y(hh),r:1.8,fill:'#2f7fd0'},g);
+    }
+    if(lv>=4) for(const [h,mh] of [[H,n2],[0,n1]]){                    // ヒント④ 光の道すじ
       const M=[0,Y(mh)], ok=mh>=bot-1e-9 && mh<=top+1e-9, O=[dist,Y(h)];
       const col=ok?'var(--ray)':'#b9afa2', dash=ok?null:'2 1.6';
       const at={stroke:col,'stroke-width':1.3}; if(dash) at['stroke-dasharray']=dash;
@@ -798,7 +858,7 @@ KIND.side={
     // 問題の点（ア〜カ）
     const pre=SIDE_PRESET[st.preset];
     if(pre && pre.H===H && pre.eye===eye) for(const [id,h] of pre.pts){
-      const seen=h>=lo-1e-9 && h<=hi+1e-9, x=dist-personW(H)/2-3.5;
+      const seen=lv>=5 && h>=lo-1e-9 && h<=hi+1e-9, x=dist-personW(H)/2-3.5;
       if(seen) el('circle',{cx:x,cy:Y(h),r:3.4,fill:'none',stroke:'var(--ray)','stroke-width':1.4},svg);
       el('circle',{cx:x,cy:Y(h),r:1.8,fill:'#3a3040'},svg);
       el('text',{x:x-4.5,y:Y(h)+2,'font-size':6,'font-weight':900,fill:'var(--ink)','text-anchor':'end'},svg).textContent=id;
@@ -809,7 +869,15 @@ KIND.side={
     KIND.side._last={lo,hi,n1,n2};
   },
   msg(){
-    const {lo,hi,n1,n2}=KIND.side._last, st=ST, pre=SIDE_PRESET[st.preset];
+    const {lo,hi,n1,n2}=KIND.side._last, st=ST, pre=SIDE_PRESET[st.preset], lv=st.hint;
+    if(lv<5){
+      const t=[ `<b>${pre?pre.name:''}</b>　${pre?pre.note:''}`,
+        `鏡の向こうに<b>像</b>をかいた。像は、鏡から自分と同じ距離（${st.dist}cm）のところにできる。`,
+        '目と、像の頭のてっぺん・足先を結んだ（紫の点線）。この線が鏡の面を通るところ（紫の●）の<b>あいだに鏡があれば</b>、全身がうつる。',
+        '目と、鏡の上はし・下はしを結んで、像までのばした（青の点線）。像のうち、<b>青の●のあいだ</b>が鏡にうつって見える。',
+        '頭のてっぺん・足先から出た光が、鏡ではね返って目に届く道すじ。鏡のないところに当たる光（灰色の点線）は、目に届かない。' ][lv];
+      document.getElementById('msg').innerHTML=t; return;
+    }
     let html = hi>lo ? `鏡にうつって見えるのは、床から <b>${Math.round(lo)}cm 〜 ${Math.round(hi)}cm</b> の部分。`
                      : '鏡には、自分のすがたがうつらない。';
     if(hi>lo && 2*st.top-st.eye>st.H) html += `（頭の上 ${Math.round(2*st.top-st.eye-st.H)}cm まで、まわりもうつる）`;
@@ -832,7 +900,7 @@ KIND.side={
 buildHome();
 function fromHash(){ const [id,preset]=decodeURIComponent(location.hash.slice(1)).split(':'); if(PROBLEMS.some(p=>p.id===id&&(p.cols||p.kind))) openLab(id, preset&&SIDE_PRESET[preset]?{preset}:{}); }
 fromHash(); addEventListener('hashchange',fromHash);
-window.__kagami={PROBLEMS,seenVia,reflect,side,get ST(){return ST;},openLab};
+window.__kagami={PROBLEMS,seenVia,reflect,side,get ST(){return ST;},openLab,render};
 </script>
 </body>
 </html>
