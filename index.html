@@ -245,7 +245,7 @@ function drawBoard(svg,P,st,opt){
   for(let j=0;j<=P.rows;j++) el('line',{x1:0,y1:j*C,x2:W,y2:j*C,stroke:'var(--grid)','stroke-width':.6},g);
 
   const E=st.eye, lv=st.hint||0;
-  const objs=P.objs.map((o,i)=>({...o, at:st.objs[i]}));
+  const objs=P.objs.map((o,i)=>({...o, at:st.objs[i]})); __curObjs=st.objs;
   const seenOf=o=>P.mirrors.some(m=>seenVia(E,o.at,m));
   const front=(o,m)=>side(o.at,m)!==0 && side(o.at,m)===side(E,m);     // 目と同じがわ（鏡の表）にある物だけ像をかく
   const onLine=(o,m)=>side(o.at,m)===0;                                // 鏡の面をのばした線の上の物は、像が自分と重なる
@@ -285,6 +285,7 @@ function drawBoard(svg,P,st,opt){
     el('line',{x1:X(o.at),y1:Y(o.at),x2:X(E),y2:Y(E),stroke:IMG,'stroke-width':.9*LWK,'stroke-dasharray':'2.6 1.4'},svg);
 
   // ヒント③ 光の道すじ（鏡にうつって見える物すべて）
+  let magQ=null;
   if(lv>=3){
     const pathG=el('g',{},svg);
     // 角度は1つの物だけ（いくつも出すと数字が重なる）。最後に動かした物、なければ最初に見える物
@@ -297,8 +298,8 @@ function drawBoard(svg,P,st,opt){
       const toE=sub(E,H), lE=Math.hypot(...toE), Eend=addv(H,mul(toE,Math.max(0,(lE-0.42)/lE)));   // 目にかからないよう少し手前で止める
       el('line',{x1:X(H),y1:Y(H),x2:X(Eend),y2:Y(Eend),stroke:'var(--ray)','stroke-width':1.6*LWK,'marker-end':`url(#arw-${opt.uid})`},pathG);
       el('circle',{cx:X(H),cy:Y(H),r:1.1,fill:'var(--ink)'},pathG);
-      if(st.ang && oi===ai) drawAngles(pathG,o.at,H,E,m,X,Y);
     }
+    if(st.ang && ai>=0) magQ=objs[ai].at;                              // 角度は反射点の拡大図にかく（方眼のままだとせまくて見えない）。いちばん上に重ねるので最後に描く
   }
 
   // 物（見える・見えないの印は、ヒント③まで出さない）
@@ -318,7 +319,61 @@ function drawBoard(svg,P,st,opt){
   el('path',{d:eyePath(X(E),Y(E)),fill:'#3a3040'},eg);
   el('circle',{cx:X(E),cy:Y(E),r:1,fill:'#fff'},eg);
   el('text',{x:X(E)-3.4,y:Y(E)+5.6,'font-size':4.8,'font-weight':900,fill:'var(--ink)','text-anchor':'end'},eg).textContent=P.eye.label;
+  if(magQ && !drawMagnifier(svg,P,magQ,E,X,Y,opt)){                   // 拡大図の置き場所がないときは、方眼の上にかく
+    const m=P.mirrors.find(mm=>seenVia(E,magQ,mm)); if(m) drawAngles(svg,magQ,seenVia(E,magQ,m),E,m,X,Y); }
 }
+/* 入射角・反射角の拡大図（虫めがね）。反射点のまわりを丸く切りぬいて大きくし、方眼の空いているところに重ねる
+   2026-10-27 本人「これが限界？」→ 方眼の縮尺のままだと、鏡と棒は目が鏡から1マスしかなく角度がかけない */
+function drawMagnifier(svg,P,Q,E,X,Y,opt){
+  const m=P.mirrors.find(mm=>seenVia(E,Q,mm)); if(!m) return; const H=seenVia(E,Q,m);
+  const R=Math.max(1.6,Math.min(.22*Math.max(P.cols,P.rows), Math.min(P.cols,P.rows)/2-.1)), k=Math.max(2,R);   // R＝拡大図の半径（マス）、k＝倍率
+  // 置き場所：物・目・反射点をなるべくかくさない所
+  const keep=[H,E,...P.objs.map((o,i)=>__curObjs?__curObjs[i]:o.at)];
+  let best=null;
+  const pad=1.5;                                                     // 方眼のまわりの余白に少しはみ出してよい
+  for(let cx=R-pad; cx<=P.cols-R+pad+1e-9; cx+=.5) for(let cy=R-pad; cy<=P.rows-R+pad+1e-9; cy+=.5){
+    const c=[cx,cy], cover=keep.filter(q=>Math.hypot(...sub(q,c))<R+.4).length, dH=Math.hypot(...sub(H,c));
+    const score=cover*100 - Math.min(dH, 2*R+2);                       // かくす数が少ない・反射点から少しはなれた所
+    if(dH>R+.6 && (!best||score<best.score)) best={c,score};
+  }
+  if(!best) return false;
+  const Cc=best.c, Mp=p=>addv(Cc,mul(sub(p,H),k));
+  const g=el('g',{},svg), cid='mag-'+opt.uid, cl=el('clipPath',{id:cid},svg.querySelector('defs'));
+  el('circle',{cx:X(Cc),cy:Y(Cc),r:R*C},cl);
+  // 方眼の上の印と、拡大図へのひも
+  const v=unit(sub(Cc,H)), edge=sub(Cc,mul(v,R));
+  el('circle',{cx:X(H),cy:Y(H),r:5,fill:'none',stroke:'var(--ink-soft)','stroke-width':.7},g);
+  el('line',{x1:X(addv(H,mul(v,.5))),y1:Y(addv(H,mul(v,.5))),x2:X(edge),y2:Y(edge),stroke:'var(--ink-soft)','stroke-width':.7},g);
+  el('circle',{cx:X(Cc),cy:Y(Cc),r:R*C,fill:'#fff',stroke:'var(--ink-soft)','stroke-width':1},g);
+  const in_=el('g',{'clip-path':`url(#${cid})`},g);
+  // 方眼（拡大）
+  for(let i=Math.floor(H[0]-R/k)-1;i<=H[0]+R/k+1;i++){ const a=Mp([i,H[1]-R/k-1]), b=Mp([i,H[1]+R/k+1]); el('line',{x1:X(a),y1:Y(a),x2:X(b),y2:Y(b),stroke:'var(--grid)','stroke-width':.6},in_); }
+  for(let j=Math.floor(H[1]-R/k)-1;j<=H[1]+R/k+1;j++){ const a=Mp([H[0]-R/k-1,j]), b=Mp([H[0]+R/k+1,j]); el('line',{x1:X(a),y1:Y(a),x2:X(b),y2:Y(b),stroke:'var(--grid)','stroke-width':.6},in_); }
+  // 鏡
+  const d=sub(m.b,m.a), L=Math.hypot(...d), n0=[-d[1]/L,d[0]/L], s=side(E,m)||1, n=mul(n0,s);
+  const ma=Mp(m.a), mb=Mp(m.b), back=mul(n,-.32);
+  el('path',{d:`M${X(ma)},${Y(ma)} L${X(mb)},${Y(mb)} L${X(addv(mb,back))},${Y(addv(mb,back))} L${X(addv(ma,back))},${Y(addv(ma,back))} Z`,fill:'var(--mirror-d)'},in_);
+  el('line',{x1:X(ma),y1:Y(ma),x2:X(mb),y2:Y(mb),stroke:'var(--mirror)','stroke-width':1.6,'stroke-linecap':'round'},in_);
+  // 光（物→反射点→目）
+  const Hc=Mp(H), uq=unit(sub(Q,H)), ue=unit(sub(E,H));
+  rayLine(in_,addv(Hc,mul(uq,R*1.1)),Hc,opt.uid); rayLine(in_,Hc,addv(Hc,mul(ue,R*1.1)),opt.uid);
+  el('circle',{cx:X(Hc),cy:Y(Hc),r:1.1,fill:'var(--ink)'},in_);
+  // 法線と角
+  const N2=addv(Hc,mul(n,R*.85));
+  el('line',{x1:X(Hc),y1:Y(Hc),x2:X(N2),y2:Y(N2),stroke:'var(--ink-soft)','stroke-width':.8,'stroke-dasharray':'1.6 1.2'},in_);
+  for(const [u,col] of [[uq,'#7b4fc9'],[ue,'#2f7fd0']]){
+    const th=Math.acos(Math.max(-1,Math.min(1,dot(n,u)))), r=R*.4, p1=addv(Hc,mul(n,r)), p2=addv(Hc,mul(u,r)), sweep=cross(n,u)>0?1:0;
+    el('path',{d:`M${X(p1)},${Y(p1)} A${r*C},${r*C} 0 0 ${sweep} ${X(p2)},${Y(p2)}`,fill:'none',stroke:col,'stroke-width':1.5},in_);
+    const bis=addv(n,u), lb=Math.hypot(...bis)||1; let mid=addv(Hc,mul(bis,R*.62/lb));
+    const sep=2*R*.62*Math.sin(th/2), pp=sub(u,mul(n,dot(u,n))), lp=Math.hypot(...pp);
+    if(lp>1e-6 && sep<1.3) mid=addv(mid,mul(pp,(1.3-sep)/2/lp));
+    el('text',{x:X(mid),y:Y(mid)+1.7,'font-size':4.8,'font-weight':900,fill:col,'text-anchor':'middle',stroke:'#fff','stroke-width':1.4,'paint-order':'stroke','stroke-linejoin':'round'},in_).textContent=Math.round(th*180/Math.PI)+'°';
+  }
+  const lp=addv(Cc,mul(n,-(R-.55)));                                  // 名前は鏡のうらがわ（光のない側）に
+  el('text',{x:X(lp),y:Y(lp)+1.3,'font-size':3.6,'font-weight':900,fill:'var(--ink-soft)','text-anchor':'middle'},g).textContent='反射点の拡大';
+  return true;
+}
+let __curObjs=null;
 // 目の形（アーモンド形）
 function eyePath(x,y){ const w=3.6,h=2.3; return `M${x-w},${y} Q${x},${y-h*1.6} ${x+w},${y} Q${x},${y+h*1.6} ${x-w},${y} Z`; }
 // 法線と、入射角・反射角
