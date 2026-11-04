@@ -55,6 +55,8 @@
   @media(max-width:820px){ .main{grid-template-columns:1fr;} }
   .figCard{padding:8px;}
   @media(min-width:821px){ .figCard{position:sticky; top:12px;} }   /* 右の操作が長くても、図は見えたまま */
+  /* 1列（タブレット縦・スマホ）でも、図は画面の上半分に止めて、下でヒントやスライダーをさわる（2026-11-04 本人） */
+  @media(max-width:820px){ .figCard{position:sticky; top:0; z-index:5;} .figCard #fig{max-height:46vh;} .figCard #figHint{display:none;} }
   #fig{display:block; width:100%; height:auto; max-height:calc(100vh - 120px); touch-action:none; background:#fff; border-radius:14px; user-select:none;}
   #fig .drag{cursor:grab;}
   .side{display:flex; flex-direction:column; gap:10px;}
